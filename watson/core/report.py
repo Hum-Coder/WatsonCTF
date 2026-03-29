@@ -165,24 +165,23 @@ class CaseReport:
             closing.append(f"\n  Found {len(flags)} flag(s): ", style="dim")
             for f in flags:
                 closing.append(f"\n    {f.flag}", style="bold bright_green")
-        elif high:
+        elif high or med:
+            quote = get_uncertain()
             closing = Text()
-            closing.append("Elementary.\n\n", style="bold white")
+            closing.append(f"\"{quote}\"\n", style="italic white")
+            closing.append("                        — Dr. J.H. Watson\n\n", style="dim")
             closing.append(
-                f"The evidence is clear — {len(high)} high-confidence finding(s) demand attention.\n",
+                "  No flag recovered, but the trail is warm. Follow these leads:\n\n",
                 style="white",
-            )
-            closing.append(
-                "I recommend a thorough review of each finding above.\n", style="dim white"
             )
         else:
             quote = get_uncertain()
             closing = Text()
             closing.append(f"\"{quote}\"\n", style="italic white")
             closing.append("                        — Dr. J.H. Watson\n\n", style="dim")
-            if med or low:
+            if low:
                 closing.append(
-                    f"  {len(med)} medium and {len(low)} low-confidence observations recorded.\n",
+                    f"  {len(low)} low-confidence observations recorded. May be worth a look.\n",
                     style="dim white",
                 )
             else:
@@ -200,6 +199,35 @@ class CaseReport:
                 padding=(0, 2),
             )
         )
+
+        # Leads panel — non-flag HIGH and MED findings listed explicitly
+        leads = [f for f in findings if not getattr(f, "flag", None)
+                 and getattr(f, "confidence", "").upper() in ("HIGH", "MED")]
+        if leads and not flags:
+            self.console.print()
+            leads_text = Text()
+            for i, f in enumerate(leads, 1):
+                conf = getattr(f, "confidence", "MED").upper()
+                bullet = "[bold red]●[/bold red]" if conf == "HIGH" else "[bold yellow]◐[/bold yellow]"
+                technique = getattr(f, "technique", "unknown")
+                message = getattr(f, "message", "")
+                extracted = getattr(f, "extracted_files", [])
+                leads_text.append(f"  {i}. ", style="dim")
+                leads_text.append(f"{message}\n", style="white")
+                leads_text.append(f"     technique: {technique}", style="dim")
+                if extracted:
+                    leads_text.append(f"  →  {extracted[0]}", style="dim green")
+                leads_text.append("\n")
+
+            self.console.print(
+                Panel(
+                    leads_text,
+                    title="[bold yellow][ LEADS TO FOLLOW ][/bold yellow]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                    padding=(0, 2),
+                )
+            )
 
     # ------------------------------------------------------------------
     # Warnings and notices
