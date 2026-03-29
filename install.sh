@@ -3,10 +3,15 @@ set -e
 
 # ============================================================
 #  Watson CTF Installer
+#  Usage: curl -fsSL https://raw.githubusercontent.com/Hum-Coder/WatsonCTF/main/install.sh | bash
+#
 #  "When you have eliminated the impossible, whatever remains,
 #   however improbable, must be the truth." — but Watson does
 #   the heavy lifting first.
 # ============================================================
+
+REPO_URL="https://github.com/Hum-Coder/WatsonCTF.git"
+INSTALL_DIR="${HOME}/.local/share/watson-ctf"
 
 BOLD="\033[1m"
 GREEN="\033[32m"
@@ -63,17 +68,30 @@ fi
 success "Python $PY_VERSION — satisfactory."
 
 # ------------------------------------------------------------------
-# 2. Install the pip package
+# 2. Clone or update the repo
 # ------------------------------------------------------------------
-info "Installing watson-ctf package (editable)..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$PYTHON" -m pip install -e "$SCRIPT_DIR" --quiet && success "watson-ctf installed." || {
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+    info "Updating existing Watson installation at $INSTALL_DIR..."
+    git -C "$INSTALL_DIR" pull --quiet && success "Repository updated." || warn "Could not update repo — using existing version."
+else
+    info "Cloning Watson into $INSTALL_DIR..."
+    git clone --quiet "$REPO_URL" "$INSTALL_DIR" && success "Repository cloned." || {
+        error "git clone failed. Check your internet connection."
+        exit 1
+    }
+fi
+
+# ------------------------------------------------------------------
+# 3. Install the pip package
+# ------------------------------------------------------------------
+info "Installing watson-ctf package..."
+"$PYTHON" -m pip install -e "$INSTALL_DIR" --quiet && success "watson-ctf installed." || {
     error "pip install failed. Try running with sudo or inside a virtualenv."
     exit 1
 }
 
 # ------------------------------------------------------------------
-# 3. Detect OS and install system dependencies
+# 4. Detect OS and install system dependencies
 # ------------------------------------------------------------------
 SYSTEM_DEPS="binwalk foremost sleuthkit steghide exiftool qemu-utils"
 
@@ -125,7 +143,7 @@ install_system_deps() {
 install_system_deps
 
 # ------------------------------------------------------------------
-# 4. Optional Python dependencies
+# 5. Optional Python dependencies
 # ------------------------------------------------------------------
 info "Attempting to install optional Python dependencies..."
 OPTIONAL_DEPS="mutagen pypdf scapy scipy numpy"
@@ -137,7 +155,7 @@ done
 "$PYTHON" -m pip install pytsk3 --quiet 2>/dev/null && success "Python: pytsk3 installed." || warn "Python: pytsk3 not available — disk analysis will use sleuthkit CLI tools."
 
 # ------------------------------------------------------------------
-# 5. Run watson doctor
+# 6. Run watson doctor
 # ------------------------------------------------------------------
 echo ""
 info "Running ${BOLD}watson doctor${RESET} to check capabilities..."

@@ -3,7 +3,6 @@ Watson CLI — the primary entry point.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -290,27 +289,6 @@ def doctor() -> None:
 
 
 # ------------------------------------------------------------------
-# install command
-# ------------------------------------------------------------------
-
-@app.command("install")
-def install() -> None:
-    """
-    Install Watson's system dependencies using the detected package manager.
-    """
-    _print_banner()
-    console.print("[bold white]Running Watson installer...[/bold white]")
-    console.print()
-
-    install_sh = Path(__file__).parent.parent / "install.sh"
-    if install_sh.exists():
-        os.execv("/bin/bash", ["/bin/bash", str(install_sh)])
-    else:
-        console.print("[bold red]install.sh not found. Please run it manually from the project root.[/bold red]")
-        raise typer.Exit(1)
-
-
-# ------------------------------------------------------------------
 # Default: accept a file as first arg (shorthand for examine)
 # ------------------------------------------------------------------
 
@@ -362,7 +340,7 @@ def _preprocess_argv() -> None:
     If the first positional argument is not a known subcommand and exists
     as a file/directory on disk, insert 'examine' before it.
     """
-    _KNOWN_SUBCOMMANDS = {"examine", "doctor", "install", "--help", "-h", "--version", "-V"}
+    _KNOWN_SUBCOMMANDS = {"examine", "doctor", "--help", "-h", "--version", "-V"}
     args = sys.argv[1:]
     if not args:
         return
