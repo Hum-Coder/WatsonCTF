@@ -182,6 +182,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add new techniques.
 
 Watson degrades gracefully — it works without any of these, but installs them for full capability:
 
+The install script supports: **Debian/Ubuntu/Kali** (`apt`), **Fedora/RHEL/Rocky/AlmaLinux** (`dnf`), **CentOS** (`yum`), **Arch/Manjaro/BlackArch** (`pacman`), **macOS** (`brew`). On RHEL-based distros it enables EPEL automatically for packages not in the base repos.
+
 | Tool | Unlocks |
 |------|---------|
 | `binwalk` | Deep file carving from binaries |

@@ -98,6 +98,10 @@ SYSTEM_DEPS="binwalk foremost sleuthkit steghide exiftool qemu-utils"
 detect_os() {
     if command -v apt-get &>/dev/null; then
         echo "apt"
+    elif command -v dnf &>/dev/null; then
+        echo "dnf"
+    elif command -v yum &>/dev/null; then
+        echo "yum"
     elif command -v pacman &>/dev/null; then
         echo "pacman"
     elif command -v brew &>/dev/null; then
@@ -114,11 +118,24 @@ install_system_deps() {
     case "$OS_TYPE" in
         apt)
             info "Installing system dependencies via apt..."
-            # exiftool is libimage-exiftool-perl on debian/ubuntu
-            # qemu-utils for qemu-img
             sudo apt-get update -qq 2>/dev/null || warn "apt-get update failed, continuing..."
             for pkg in binwalk foremost sleuthkit steghide libimage-exiftool-perl qemu-utils; do
                 sudo apt-get install -y -qq "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
+            done
+            ;;
+        dnf)
+            info "Installing system dependencies via dnf..."
+            # Enable EPEL for foremost and steghide on RHEL-based distros
+            sudo dnf install -y -q epel-release 2>/dev/null || true
+            for pkg in binwalk foremost sleuthkit steghide perl-Image-ExifTool qemu-img; do
+                sudo dnf install -y -q "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
+            done
+            ;;
+        yum)
+            info "Installing system dependencies via yum..."
+            sudo yum install -y -q epel-release 2>/dev/null || true
+            for pkg in binwalk foremost sleuthkit steghide perl-Image-ExifTool qemu-img; do
+                sudo yum install -y -q "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
             done
             ;;
         pacman)
@@ -135,7 +152,7 @@ install_system_deps() {
             ;;
         *)
             warn "Unknown package manager. Please install manually: $SYSTEM_DEPS"
-            warn "Supported: apt (Debian/Ubuntu), pacman (Arch), brew (macOS)"
+            warn "Supported: apt (Debian/Ubuntu/Kali), dnf (Fedora/RHEL/Rocky/Alma), yum (CentOS), pacman (Arch), brew (macOS)"
             ;;
     esac
 }
