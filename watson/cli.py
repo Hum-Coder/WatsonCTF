@@ -25,6 +25,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+modules_app = typer.Typer(help="Manage Watson modules.")
+app.add_typer(modules_app, name="modules")
+
 console = Console()
 
 
@@ -65,11 +68,14 @@ def examine(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output."),
     extract_dir: Optional[Path] = typer.Option(None, "--extract-dir", "-o", help="Directory to store extracted files."),
     aggressive: bool = typer.Option(False, "--aggressive", "-a", help="Aggressive mode: depth=6, max-files=100."),
+    modules: Optional[str] = typer.Option(None, "--modules", "-m", help="Comma-separated modules to use, e.g. core,images,disk"),
+    skip: Optional[str] = typer.Option(None, "--skip", "-s", help="Comma-separated modules to skip for this run"),
 ) -> None:
     """
     Examine a file or directory for CTF clues.
     Watson will apply all relevant forensics techniques.
     """
+    import watson.config as _config
     from watson.core.report import CaseReport
     from watson.core.triage import TriageQueue
     from watson.core.examiner import Examiner
@@ -81,6 +87,20 @@ def examine(
         max_files = 100
         console.print("[bold yellow]Aggressive mode enabled — depth=6, max-files=100[/bold yellow]")
         console.print()
+
+    # Resolve enabled modules for this run
+    if modules is not None:
+        selected = [m.strip() for m in modules.split(",") if m.strip()]
+        if "core" not in selected:
+            selected.insert(0, "core")
+        resolved_modules: Optional[list] = selected
+    elif skip is not None:
+        skipped = {m.strip() for m in skip.split(",") if m.strip()}
+        resolved_modules = [m for m in _config.get_enabled_modules() if m not in skipped]
+        if "core" not in resolved_modules:
+            resolved_modules.insert(0, "core")
+    else:
+        resolved_modules = None  # examiner will read from config
 
     # Resolve target
     target = target.resolve()
@@ -112,7 +132,7 @@ def examine(
     triage = TriageQueue(max_depth=depth, max_items=max_files)
 
     # Run examiner
-    examiner = Examiner(report=report, triage=triage, verbose=verbose, extract_dir=extract_dir)
+    examiner = Examiner(report=report, triage=triage, verbose=verbose, extract_dir=extract_dir, enabled_modules=resolved_modules)
 
     try:
         all_findings = examiner.run(target)

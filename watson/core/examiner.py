@@ -21,6 +21,7 @@ class Examiner:
         triage: TriageQueue,
         verbose: bool = False,
         extract_dir: Optional[Path] = None,
+        enabled_modules: Optional[List[str]] = None,
     ) -> None:
         self.report = report
         self.triage = triage
@@ -28,6 +29,8 @@ class Examiner:
         self.extract_dir = extract_dir
         self._all_findings: List[Finding] = []
         self._flags_found: List[str] = []
+        # If enabled_modules is None, read from user config at examination time
+        self.enabled_modules = enabled_modules
 
     # ------------------------------------------------------------------
     # Entry point
@@ -182,7 +185,11 @@ class Examiner:
     # ------------------------------------------------------------------
 
     def _get_techniques(self, path: Path, mime: str) -> List[BaseTechnique]:
-        """Return ordered list of applicable techniques for this file/mime."""
+        """Return ordered list of applicable techniques for this file/mime,
+        filtered to only include techniques from enabled modules."""
+        import watson.config as _config
+        import watson.modules as _modules
+
         from watson.techniques.universal.strings_scan import StringsScan
         from watson.techniques.universal.encoding_detect import EncodingDetect
         from watson.techniques.images.metadata import ImageMetadata
@@ -195,6 +202,19 @@ class Examiner:
         from watson.techniques.disk.partition import PartitionAnalysis
         from watson.techniques.disk.filesystem import FilesystemAnalysis
 
+        # Resolve which modules are active for this run
+        if self.enabled_modules is not None:
+            active_modules = list(self.enabled_modules)
+        else:
+            active_modules = _config.get_enabled_modules()
+
+        # Always include core
+        if "core" not in active_modules:
+            active_modules.insert(0, "core")
+
+        enabled_technique_names = set(_modules.get_techniques_for_modules(active_modules))
+
+        # Map class name -> instance for all known techniques
         all_techniques: List[BaseTechnique] = [
             # Universal (always run first)
             StringsScan(),
@@ -212,4 +232,9 @@ class Examiner:
             FilesystemAnalysis(),
         ]
 
-        return [t for t in all_techniques if t.applicable(path, mime)]
+        # Filter by enabled modules and applicability
+        filtered = [
+            t for t in all_techniques
+            if type(t).__name__ in enabled_technique_names and t.applicable(path, mime)
+        ]
+        return filtered
