@@ -18,10 +18,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+test = [
+    "pytest>=7",
+    "pytest-cov",
+]
 full = [
     "mutagen",
     "pypdf",
     "scapy",
+    "piexif",
+    "pyzipper",
 ]
 
 [project.scripts]

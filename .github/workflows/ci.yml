@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package
-        run: pip install -e ".[full]"
+        run: pip install -e ".[full,test]"
 
       - name: Check watson imports cleanly
         run: python -c "import watson; from watson.cli import app"
@@ -64,3 +64,6 @@ jobs:
               z.writestr('hello.txt', 'nothing to see here')
           "
           watson examine /tmp/test.zip
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
