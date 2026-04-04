@@ -28,6 +28,150 @@ app = typer.Typer(
 modules_app = typer.Typer(help="Manage Watson modules.")
 app.add_typer(modules_app, name="modules")
 
+
+# ------------------------------------------------------------------
+# modules subcommands
+# ------------------------------------------------------------------
+
+@modules_app.command("list")
+def modules_list() -> None:
+    """List all Watson modules and their status."""
+    import watson.config as _config
+    import watson.modules as _modules
+
+    table = Table(
+        title="Watson Modules",
+        box=box.SIMPLE_HEAD,
+        border_style="dim",
+        show_header=True,
+        header_style="bold white",
+    )
+    table.add_column("Name",        width=12)
+    table.add_column("Description", width=45)
+    table.add_column("Enabled",     width=9)
+    table.add_column("Available",   width=10)
+    table.add_column("Missing deps", width=40, overflow="fold")
+
+    for mod_name, mod in _modules.MODULES.items():
+        enabled = _config.is_enabled(mod_name)
+        available = mod.is_available()
+        enabled_str  = "[bold green]  yes [/bold green]" if enabled  else "[dim]  no [/dim]"
+        avail_str    = "[bold green]  yes [/bold green]" if available else "[bold red]  no [/bold red]"
+
+        missing_parts = []
+        for pkg in mod.missing_python():
+            missing_parts.append(f"pip:{pkg}")
+        for tool in mod.missing_system():
+            missing_parts.append(f"sys:{tool}")
+        missing_str = ", ".join(missing_parts) if missing_parts else "[dim]—[/dim]"
+
+        table.add_row(mod_name, mod.description, enabled_str, avail_str, missing_str)
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@modules_app.command("enable")
+def modules_enable(
+    name: str = typer.Argument(..., help="Module name to enable"),
+) -> None:
+    """Enable a Watson module."""
+    import watson.config as _config
+    import watson.modules as _modules
+
+    if name not in _modules.MODULES:
+        console.print(f"[bold red]Unknown module: {name}[/bold red]")
+        console.print(f"Available modules: {', '.join(_modules.MODULES.keys())}")
+        raise typer.Exit(1)
+
+    _config.enable_module(name)
+    console.print(f"[bold green]Module '{name}' enabled.[/bold green]")
+
+
+@modules_app.command("disable")
+def modules_disable(
+    name: str = typer.Argument(..., help="Module name to disable"),
+) -> None:
+    """Disable a Watson module."""
+    import watson.config as _config
+    import watson.modules as _modules
+
+    if name not in _modules.MODULES:
+        console.print(f"[bold red]Unknown module: {name}[/bold red]")
+        console.print(f"Available modules: {', '.join(_modules.MODULES.keys())}")
+        raise typer.Exit(1)
+
+    try:
+        _config.disable_module(name)
+        console.print(f"[bold yellow]Module '{name}' disabled.[/bold yellow]")
+    except ValueError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        raise typer.Exit(1)
+
+
+@modules_app.command("install")
+def modules_install(
+    name: str = typer.Argument(..., help="Module name to install dependencies for"),
+) -> None:
+    """Show the install command for a Watson module's dependencies."""
+    import watson.modules as _modules
+
+    if name not in _modules.MODULES:
+        console.print(f"[bold red]Unknown module: {name}[/bold red]")
+        console.print(f"Available modules: {', '.join(_modules.MODULES.keys())}")
+        raise typer.Exit(1)
+
+    mod = _modules.MODULES[name]
+    missing_py  = mod.missing_python()
+    missing_sys = mod.missing_system()
+
+    console.print()
+    console.print(f"[bold white]Install instructions for module:[/bold white] [bold cyan]{name}[/bold cyan]")
+    console.print()
+
+    if not missing_py and not missing_sys:
+        console.print(f"[bold green]Module '{name}' is fully available — nothing to install.[/bold green]")
+        console.print()
+        return
+
+    if missing_py:
+        console.print("[bold white]Python packages:[/bold white]")
+        console.print(f"  [green]pip install {' '.join(missing_py)}[/green]")
+        console.print()
+
+    if missing_sys:
+        console.print("[bold white]System packages:[/bold white]")
+        # Detect OS type for the hint
+        import shutil as _shutil
+        if _shutil.which("apt-get"):
+            os_type = "apt"
+        elif _shutil.which("dnf"):
+            os_type = "dnf"
+        elif _shutil.which("yum"):
+            os_type = "yum"
+        elif _shutil.which("pacman"):
+            os_type = "pacman"
+        elif _shutil.which("brew"):
+            os_type = "brew"
+        else:
+            os_type = "apt"
+
+        pkgs = mod.install_cmd(os_type)
+        if pkgs:
+            if os_type == "apt":
+                console.print(f"  [green]sudo apt-get install -y {' '.join(pkgs)}[/green]")
+            elif os_type in ("dnf", "yum"):
+                console.print(f"  [green]sudo {os_type} install -y {' '.join(pkgs)}[/green]")
+            elif os_type == "pacman":
+                console.print(f"  [green]sudo pacman -S --needed {' '.join(pkgs)}[/green]")
+            elif os_type == "brew":
+                console.print(f"  [green]brew install {' '.join(pkgs)}[/green]")
+        else:
+            console.print(f"  [dim]Missing tools: {', '.join(missing_sys)} — install manually for your OS[/dim]")
+        console.print()
+
+
 console = Console()
 
 
@@ -178,8 +322,11 @@ def examine(
 @app.command("doctor")
 def doctor() -> None:
     """
-    Check Watson's capabilities — tools, Python packages, and system dependencies.
+    Check Watson's capabilities — per-module status, tools, and Python packages.
     """
+    import watson.config as _config
+    import watson.modules as _modules
+
     console.print()
     console.print(
         Panel(
@@ -191,108 +338,62 @@ def doctor() -> None:
     )
     console.print()
 
-    # --- System tools ---
-    system_tools = [
-        ("binwalk",   "Firmware/file carving",          "apt install binwalk"),
-        ("foremost",  "File carving",                    "apt install foremost"),
-        ("mmls",      "Disk partition analysis (TSK)",   "apt install sleuthkit"),
-        ("fls",       "Filesystem listing (TSK)",        "apt install sleuthkit"),
-        ("icat",      "File recovery (TSK)",             "apt install sleuthkit"),
-        ("steghide",  "Steganography extraction",        "apt install steghide"),
-        ("exiftool",  "EXIF metadata",                   "apt install libimage-exiftool-perl"),
-        ("qemu-img",  "Disk image conversion",           "apt install qemu-utils"),
-        ("pdfinfo",   "PDF metadata",                    "apt install poppler-utils"),
-        ("ffmpeg",    "Audio conversion",                "apt install ffmpeg"),
-        ("mount",     "Filesystem mounting",             "pre-installed on Linux"),
-    ]
-
-    tool_table = Table(
-        title="System Tools",
+    # --- Per-module status table ---
+    mod_table = Table(
+        title="Module Status",
         box=box.SIMPLE_HEAD,
         border_style="dim",
         show_header=True,
         header_style="bold white",
     )
-    tool_table.add_column("Tool",         width=14)
-    tool_table.add_column("Purpose",      width=30)
-    tool_table.add_column("Status",       width=10)
-    tool_table.add_column("Install hint", width=40, overflow="fold")
+    mod_table.add_column("Module",      width=12)
+    mod_table.add_column("Description", width=42)
+    mod_table.add_column("Enabled",     width=9)
+    mod_table.add_column("Available",   width=10)
+    mod_table.add_column("Missing deps", width=40, overflow="fold")
 
-    for tool, purpose, install in system_tools:
-        found = shutil.which(tool) is not None
-        status = "[bold green]  OK [/bold green]" if found else "[bold red] MISS[/bold red]"
-        hint = "" if found else f"[dim]{install}[/dim]"
-        tool_table.add_row(tool, purpose, status, hint)
+    modules_ok = 0
+    for mod_name, mod in _modules.MODULES.items():
+        enabled   = _config.is_enabled(mod_name)
+        available = mod.is_available()
 
-    console.print(tool_table)
-    console.print()
+        if available:
+            modules_ok += 1
 
-    # --- Python packages ---
-    python_pkgs = [
-        ("magic",    "python-magic",  "MIME type detection",        "pip install python-magic"),
-        ("PIL",      "Pillow",        "Image analysis",             "pip install Pillow"),
-        ("mutagen",  "mutagen",       "Audio metadata",             "pip install mutagen"),
-        ("pypdf",    "pypdf",         "PDF analysis",               "pip install pypdf"),
-        ("scapy",    "scapy",         "Network forensics",          "pip install scapy"),
-        ("scipy",    "scipy",         "Spectrogram generation",     "pip install scipy"),
-        ("numpy",    "numpy",         "Numerical processing",       "pip install numpy"),
-        ("pytsk3",   "pytsk3",        "Disk image analysis (TSK)",  "pip install pytsk3"),
-        ("yaml",     "pyyaml",        "YAML config support",        "pip install pyyaml"),
-        ("typer",    "typer",         "CLI framework",              "pip install typer"),
-        ("rich",     "rich",          "Rich terminal output",       "pip install rich"),
-    ]
+        enabled_str = "[bold green]  yes [/bold green]" if enabled  else "[dim]  no [/dim]"
+        avail_str   = "[bold green]  yes [/bold green]" if available else "[bold red]  no [/bold red]"
 
-    pkg_table = Table(
-        title="Python Packages",
-        box=box.SIMPLE_HEAD,
-        border_style="dim",
-        show_header=True,
-        header_style="bold white",
-    )
-    pkg_table.add_column("Import",   width=12)
-    pkg_table.add_column("Package",  width=12)
-    pkg_table.add_column("Purpose",  width=30)
-    pkg_table.add_column("Status",   width=10)
-    pkg_table.add_column("Install",  width=30, overflow="fold")
+        missing_parts = []
+        for pkg in mod.missing_python():
+            missing_parts.append(f"pip:{pkg}")
+        for tool in mod.missing_system():
+            missing_parts.append(f"sys:{tool}")
+        missing_str = ", ".join(missing_parts) if missing_parts else "[dim]—[/dim]"
 
-    for import_name, pkg_name, purpose, install in python_pkgs:
-        try:
-            __import__(import_name)
-            available = True
-        except ImportError:
-            available = False
+        mod_table.add_row(mod_name, mod.description, enabled_str, avail_str, missing_str)
 
-        status = "[bold green]  OK [/bold green]" if available else "[bold red] MISS[/bold red]"
-        hint = "" if available else f"[dim]{install}[/dim]"
-        pkg_table.add_row(import_name, pkg_name, purpose, status, hint)
-
-    console.print(pkg_table)
+    console.print(mod_table)
     console.print()
 
     # Summary
-    sys_ok = sum(1 for tool, _, _ in system_tools if shutil.which(tool))
-    py_ok = 0
-    for import_name, *_ in python_pkgs:
-        try:
-            __import__(import_name)
-            py_ok += 1
-        except ImportError:
-            pass
-
-    total_sys = len(system_tools)
-    total_py = len(python_pkgs)
+    total_modules = len(_modules.MODULES)
+    enabled_modules = _config.get_enabled_modules()
+    enabled_count = len(enabled_modules)
 
     summary = Text()
-    summary.append(f"System tools: {sys_ok}/{total_sys} available\n", style="white")
-    summary.append(f"Python pkgs:  {py_ok}/{total_py} available\n\n", style="white")
+    summary.append(f"Modules available: {modules_ok}/{total_modules}\n", style="white")
+    summary.append(f"Modules enabled:   {enabled_count}/{total_modules}\n\n", style="white")
 
-    if sys_ok == total_sys and py_ok == total_py:
+    if modules_ok == total_modules:
         summary.append("Watson is fully equipped. The game is afoot!\n", style="bold green")
-    elif sys_ok >= 3 and py_ok >= 5:
+    elif modules_ok >= 3:
         summary.append("Watson is operational. Some capabilities may be limited.\n", style="bold yellow")
     else:
-        summary.append("Watson is running in minimal mode. Install more tools for full capability.\n", style="bold red")
+        summary.append("Watson is running in minimal mode. Install more modules for full capability.\n", style="bold red")
 
+    summary.append("\nRun ", style="dim")
+    summary.append("watson modules install <name>", style="dim bold")
+    summary.append(" to see install commands.\n", style="dim")
     summary.append(f"\n  \"{get_random()}\"\n", style="italic dim white")
     summary.append("                        — Dr. J.H. Watson", style="dim")
 
@@ -360,7 +461,7 @@ def _preprocess_argv() -> None:
     If the first positional argument is not a known subcommand and exists
     as a file/directory on disk, insert 'examine' before it.
     """
-    _KNOWN_SUBCOMMANDS = {"examine", "doctor", "--help", "-h", "--version", "-V"}
+    _KNOWN_SUBCOMMANDS = {"examine", "doctor", "modules", "--help", "-h", "--version", "-V"}
     args = sys.argv[1:]
     if not args:
         return

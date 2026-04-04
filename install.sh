@@ -47,6 +47,18 @@ info "Commencing installation. Elementary, my dear user."
 echo ""
 
 # ------------------------------------------------------------------
+# Parse --modules flag
+# ------------------------------------------------------------------
+SELECTED_MODULES=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --modules=*) SELECTED_MODULES="${1#*=}"; shift ;;
+        --modules)   shift; SELECTED_MODULES="$1"; shift ;;
+        *)           shift ;;
+    esac
+done
+
+# ------------------------------------------------------------------
 # 1. Check Python >= 3.9
 # ------------------------------------------------------------------
 info "Checking Python version..."
@@ -82,7 +94,7 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 3. Install the pip package
+# 3. Install the pip package (core only — no optional deps yet)
 # ------------------------------------------------------------------
 info "Installing watson-ctf package..."
 "$PYTHON" -m pip install -e "$INSTALL_DIR" --quiet && success "watson-ctf installed." || {
@@ -91,10 +103,48 @@ info "Installing watson-ctf package..."
 }
 
 # ------------------------------------------------------------------
-# 4. Detect OS and install system dependencies
+# 4. Interactive module selection (only if --modules not provided)
 # ------------------------------------------------------------------
-SYSTEM_DEPS="binwalk foremost sleuthkit steghide exiftool qemu-utils"
+if [[ -z "$SELECTED_MODULES" ]]; then
+    echo ""
+    info "Which modules would you like to install?"
+    echo ""
+    echo "  [1] images      — PNG, JPEG, GIF steganography and metadata      (Pillow)"
+    echo "  [2] audio       — Spectrogram, LSB, audio metadata               (mutagen, scipy, numpy)"
+    echo "  [3] documents   — PDF analysis and text extraction                (pypdf, poppler-utils)"
+    echo "  [4] containers  — ZIP extraction and binary carving               (binwalk)"
+    echo "  [5] disk        — Disk image forensics, deleted file recovery     (sleuthkit, qemu)"
+    echo ""
+    printf "  Enter numbers separated by spaces, 'all', or press Enter for default [1 4]: "
+    read -r MODULE_INPUT
 
+    if [[ -z "$MODULE_INPUT" ]]; then
+        MODULE_INPUT="1 4"
+    fi
+
+    if [[ "$MODULE_INPUT" == "all" ]]; then
+        SELECTED_MODULES="images,audio,documents,containers,disk"
+    else
+        SELECTED_MODULES=""
+        for num in $MODULE_INPUT; do
+            case "$num" in
+                1) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}images" ;;
+                2) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}audio" ;;
+                3) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}documents" ;;
+                4) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}containers" ;;
+                5) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}disk" ;;
+                *) warn "Unknown module number: $num — skipping." ;;
+            esac
+        done
+    fi
+fi
+
+info "Selected modules: core, $SELECTED_MODULES"
+echo ""
+
+# ------------------------------------------------------------------
+# 5. Detect OS
+# ------------------------------------------------------------------
 detect_os() {
     if command -v apt-get &>/dev/null; then
         echo "apt"
@@ -114,65 +164,143 @@ detect_os() {
 OS_TYPE=$(detect_os)
 info "Detected package manager: ${BOLD}$OS_TYPE${RESET}"
 
-install_system_deps() {
+# Helper: check if a module was selected
+module_selected() {
+    local mod="$1"
+    echo "$SELECTED_MODULES" | tr ',' '\n' | grep -qx "$mod"
+}
+
+# ------------------------------------------------------------------
+# 6. Install system dependencies — per selected module
+# ------------------------------------------------------------------
+install_pkg() {
+    local pkg="$1"
     case "$OS_TYPE" in
         apt)
-            info "Installing system dependencies via apt..."
-            sudo apt-get update -qq 2>/dev/null || warn "apt-get update failed, continuing..."
-            for pkg in binwalk foremost sleuthkit steghide libimage-exiftool-perl qemu-utils; do
-                sudo apt-get install -y -qq "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
-            done
+            sudo apt-get install -y -qq "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
             ;;
         dnf)
-            info "Installing system dependencies via dnf..."
-            # Enable EPEL for foremost and steghide on RHEL-based distros
-            sudo dnf install -y -q epel-release 2>/dev/null || true
-            for pkg in binwalk foremost sleuthkit steghide perl-Image-ExifTool qemu-img; do
-                sudo dnf install -y -q "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
-            done
+            sudo dnf install -y -q "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
             ;;
         yum)
-            info "Installing system dependencies via yum..."
-            sudo yum install -y -q epel-release 2>/dev/null || true
-            for pkg in binwalk foremost sleuthkit steghide perl-Image-ExifTool qemu-img; do
-                sudo yum install -y -q "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
-            done
+            sudo yum install -y -q "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
             ;;
         pacman)
-            info "Installing system dependencies via pacman..."
-            for pkg in binwalk foremost sleuthkit steghide perl-image-exiftool qemu; do
-                sudo pacman -S --noconfirm --needed "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
-            done
+            sudo pacman -S --noconfirm --needed "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
             ;;
         brew)
-            info "Installing system dependencies via homebrew..."
-            for pkg in binwalk foremost sleuthkit steghide exiftool qemu; do
-                brew install "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
-            done
+            brew install "$pkg" 2>/dev/null && success "$pkg installed." || warn "$pkg could not be installed — skipping."
             ;;
         *)
-            warn "Unknown package manager. Please install manually: $SYSTEM_DEPS"
-            warn "Supported: apt (Debian/Ubuntu/Kali), dnf (Fedora/RHEL/Rocky/Alma), yum (CentOS), pacman (Arch), brew (macOS)"
+            warn "Unknown package manager — cannot install $pkg automatically."
             ;;
     esac
+}
+
+install_system_deps() {
+    if [[ "$OS_TYPE" == "unknown" ]]; then
+        warn "Unknown package manager. Install system tools manually for your selected modules."
+        return
+    fi
+
+    # Pre-update for apt/dnf/yum
+    case "$OS_TYPE" in
+        apt)
+            sudo apt-get update -qq 2>/dev/null || warn "apt-get update failed, continuing..."
+            ;;
+        dnf|yum)
+            sudo "$OS_TYPE" install -y -q epel-release 2>/dev/null || true
+            ;;
+    esac
+
+    # containers module: binwalk
+    if module_selected "containers"; then
+        info "Installing system deps for module: containers"
+        case "$OS_TYPE" in
+            apt)             install_pkg "binwalk" ;;
+            dnf|yum)         install_pkg "binwalk" ;;
+            pacman)          install_pkg "binwalk" ;;
+            brew)            install_pkg "binwalk" ;;
+        esac
+    fi
+
+    # documents module: poppler-utils / poppler
+    if module_selected "documents"; then
+        info "Installing system deps for module: documents"
+        case "$OS_TYPE" in
+            apt)             install_pkg "poppler-utils" ;;
+            dnf|yum)         install_pkg "poppler-utils" ;;
+            pacman)          install_pkg "poppler" ;;
+            brew)            install_pkg "poppler" ;;
+        esac
+    fi
+
+    # disk module: sleuthkit + qemu
+    if module_selected "disk"; then
+        info "Installing system deps for module: disk"
+        case "$OS_TYPE" in
+            apt)
+                install_pkg "sleuthkit"
+                install_pkg "qemu-utils"
+                ;;
+            dnf|yum)
+                install_pkg "sleuthkit"
+                install_pkg "qemu-img"
+                ;;
+            pacman)
+                install_pkg "sleuthkit"
+                install_pkg "qemu"
+                ;;
+            brew)
+                install_pkg "sleuthkit"
+                install_pkg "qemu"
+                ;;
+        esac
+    fi
 }
 
 install_system_deps
 
 # ------------------------------------------------------------------
-# 5. Optional Python dependencies
+# 7. Install Python dependencies for selected modules
 # ------------------------------------------------------------------
-info "Attempting to install optional Python dependencies..."
-OPTIONAL_DEPS="mutagen pypdf scapy scipy numpy"
-for dep in $OPTIONAL_DEPS; do
-    "$PYTHON" -m pip install "$dep" --quiet 2>/dev/null && success "Python: $dep installed." || warn "Python: $dep could not be installed — some features will be limited."
-done
+info "Installing Python dependencies for selected modules..."
 
-# pytsk3 can be tricky
-"$PYTHON" -m pip install pytsk3 --quiet 2>/dev/null && success "Python: pytsk3 installed." || warn "Python: pytsk3 not available — disk analysis will use sleuthkit CLI tools."
+# core always gets python-magic
+"$PYTHON" -m pip install python-magic --quiet 2>/dev/null && success "Python: python-magic installed." || warn "Python: python-magic could not be installed — MIME detection will use extension fallback."
+
+if module_selected "images"; then
+    "$PYTHON" -m pip install Pillow --quiet 2>/dev/null && success "Python: Pillow installed." || warn "Python: Pillow could not be installed — image analysis limited."
+fi
+
+if module_selected "audio"; then
+    for dep in mutagen scipy numpy; do
+        "$PYTHON" -m pip install "$dep" --quiet 2>/dev/null && success "Python: $dep installed." || warn "Python: $dep could not be installed — audio analysis limited."
+    done
+fi
+
+if module_selected "documents"; then
+    "$PYTHON" -m pip install pypdf --quiet 2>/dev/null && success "Python: pypdf installed." || warn "Python: pypdf could not be installed — PDF analysis limited."
+fi
+
+if module_selected "disk"; then
+    "$PYTHON" -m pip install pytsk3 --quiet 2>/dev/null && success "Python: pytsk3 installed." || warn "Python: pytsk3 not available — disk analysis will use sleuthkit CLI tools."
+fi
 
 # ------------------------------------------------------------------
-# 6. Run watson doctor
+# 8. Write the config file
+# ------------------------------------------------------------------
+info "Writing Watson config..."
+mkdir -p "$HOME/.config/watson"
+"$PYTHON" -c "
+import json, sys
+selected = '$SELECTED_MODULES'.split(',')
+enabled = ['core'] + [m.strip() for m in selected if m.strip()]
+json.dump({'enabled_modules': enabled}, sys.stdout)
+" > "$HOME/.config/watson/modules.json" && success "Config written to ~/.config/watson/modules.json" || warn "Could not write config file."
+
+# ------------------------------------------------------------------
+# 9. Run watson doctor
 # ------------------------------------------------------------------
 echo ""
 info "Running ${BOLD}watson doctor${RESET} to check capabilities..."
@@ -180,7 +308,7 @@ echo ""
 watson doctor 2>/dev/null || "$PYTHON" -m watson.cli doctor 2>/dev/null || warn "Could not run 'watson doctor' — check your PATH."
 
 # ------------------------------------------------------------------
-# 6. Closing quote
+# 10. Closing quote
 # ------------------------------------------------------------------
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
