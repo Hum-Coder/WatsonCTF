@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package
+        run: pip install -e ".[full,test]"
+
+      - name: Check watson imports cleanly
+        run: python -c "import watson; from watson.cli import app"
+
+      - name: Check all techniques import cleanly
+        run: |
+          python -c "
+          from watson.techniques.universal.strings_scan import StringsScan
+          from watson.techniques.universal.encoding_detect import EncodingDetect
+          from watson.techniques.images.metadata import ImageMetadata
+          from watson.techniques.images.lsb import LSBDetect
+          from watson.techniques.images.appended import AppendedData
+          from watson.techniques.audio.spectrogram import AudioSpectrogram
+          from watson.techniques.documents.pdf_meta import PDFMeta
+          from watson.techniques.containers.zip_extract import ZipExtract
+          from watson.techniques.containers.binwalk_wrap import BinwalkWrap
+          from watson.techniques.disk.partition import PartitionAnalysis
+          from watson.techniques.disk.filesystem import FilesystemAnalysis
+          print('All techniques imported OK')
+          "
+
+      - name: Watson doctor
+        run: watson doctor
+
+      - name: Smoke test — examine a PNG
+        run: |
+          python -c "
+          from PIL import Image
+          img = Image.new('RGB', (100, 100), color=(255, 0, 0))
+          img.save('/tmp/test.png')
+          "
+          watson examine /tmp/test.png
+
+      - name: Smoke test — examine a ZIP
+        run: |
+          python -c "
+          import zipfile
+          with zipfile.ZipFile('/tmp/test.zip', 'w') as z:
+              z.writestr('hello.txt', 'nothing to see here')
+          "
+          watson examine /tmp/test.zip
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
