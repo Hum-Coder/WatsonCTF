@@ -1,10 +1,6 @@
-"""
-Watson quotes module — real lines from Conan Doyle and forensics-adapted variants.
-"""
 import random
 from typing import List
 
-# Real Dr. Watson quotes from Conan Doyle stories
 _WATSON_QUOTES: List[str] = [
     # From A Study in Scarlet
     "I had no keener pleasure than in following Holmes in his professional investigations, "
@@ -88,25 +84,22 @@ _UNCERTAIN_QUOTES: List[str] = [
     "The clues are present, but I hesitate to draw a firm conclusion without more data.",
     "Something is decidedly irregular here, though I cannot yet say precisely what.",
     "I have noted the anomalies faithfully; the interpretation I leave to wiser minds.",
-    "The threads are here — they simply require a steadier hand than mine to weave them together.",
+    "The threads are here — they simply require a steadier hand than mine to weave them together.", # Where did you get that from? I can't find it anywhere.
 ]
 
 
 def get_random() -> str:
-    """Return a random Watson quote."""
     return random.choice(_WATSON_QUOTES)
 
 
 def get_opening() -> str:
-    """Return a quote suitable for application startup."""
     return random.choice(_OPENING_QUOTES)
 
 
 def get_uncertain() -> str:
-    """Return a quote suitable for uncertain/inconclusive conclusions."""
     return random.choice(_UNCERTAIN_QUOTES)
 
 
 def get_all() -> List[str]:
-    """Return all available quotes."""
+    # Unused, for checking only
     return list(_WATSON_QUOTES)
