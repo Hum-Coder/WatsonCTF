@@ -66,4 +66,4 @@ jobs:
           watson examine /tmp/test.zip
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short

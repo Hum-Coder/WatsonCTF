@@ -43,7 +43,10 @@ class LSBDetect(BaseTechnique):
             ))
             return findings
 
-        pixels = list(img.getdata())
+        img_rgb = img.convert("RGB")
+        px = img_rgb.load()
+        width, height = img_rgb.size
+        pixels = [px[x, y] for y in range(height) for x in range(width)]
         if not pixels:
             return findings
 
