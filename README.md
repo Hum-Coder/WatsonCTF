@@ -142,6 +142,15 @@ Any file type
 - Magic byte scanning for embedded files at non-zero offsets
 - `binwalk` carving if available
 
+### Network captures
+`.pcap` `.pcapng` `.cap`
+
+- Protocol breakdown and capture summary
+- TCP stream reassembly — extracted streams fed back into the pipeline
+- HTTP object extraction (files, images, documents transferred over HTTP)
+- Plaintext credential detection (FTP, HTTP Basic Auth, form POST, SMTP, Telnet)
+- DNS exfiltration detection — reconstructs and decodes data hidden in DNS queries
+
 ### Disk images
 `.img` `.dd` `.raw` `.vmdk` `.vhd`
 
@@ -197,6 +206,8 @@ The install script supports: **Debian/Ubuntu/Kali** (`apt`), **Fedora/RHEL/Rocky
 | `scipy` / `numpy` | Spectrogram generation |
 | `mutagen` | Audio metadata |
 | `pypdf` | PDF text and structure analysis |
+| `scapy` | PCAP stream reassembly, credential sniffing, DNS exfil detection |
+| `tshark` | HTTP object extraction from packet captures |
 
 Run `watson doctor` to see what's installed and what's missing.
 

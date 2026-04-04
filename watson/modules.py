@@ -141,6 +141,18 @@ MODULES: Dict[str, Module] = {
         brew_pkgs=["sleuthkit", "qemu"],
         always_on=False,
     ),
+    "network": Module(
+        name="network",
+        description="PCAP and network capture analysis",
+        techniques=["PcapMeta", "StreamReassembly", "HttpObjects", "CredentialSniffer", "DnsExfil"],
+        python_deps={"scapy": "scapy"},
+        system_deps=["tshark"],
+        apt_pkgs=["tshark"],
+        dnf_pkgs=["wireshark-cli"],
+        pacman_pkgs=["wireshark-cli"],
+        brew_pkgs=["wireshark"],
+        always_on=False,
+    ),
 }
 
 

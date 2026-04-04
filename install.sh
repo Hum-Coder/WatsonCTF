@@ -114,6 +114,7 @@ if [[ -z "$SELECTED_MODULES" ]]; then
     echo "  [3] documents   — PDF analysis and text extraction                (pypdf, poppler-utils)"
     echo "  [4] containers  — ZIP extraction and binary carving               (binwalk)"
     echo "  [5] disk        — Disk image forensics, deleted file recovery     (sleuthkit, qemu)"
+    echo "  [6] network     — PCAP analysis, stream reassembly, credential sniffing  (scapy, tshark)"
     echo ""
     printf "  Enter numbers separated by spaces, 'all', or press Enter for default [1 4]: "
     read -r MODULE_INPUT
@@ -123,7 +124,7 @@ if [[ -z "$SELECTED_MODULES" ]]; then
     fi
 
     if [[ "$MODULE_INPUT" == "all" ]]; then
-        SELECTED_MODULES="images,audio,documents,containers,disk"
+        SELECTED_MODULES="images,audio,documents,containers,disk,network"
     else
         SELECTED_MODULES=""
         for num in $MODULE_INPUT; do
@@ -133,6 +134,7 @@ if [[ -z "$SELECTED_MODULES" ]]; then
                 3) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}documents" ;;
                 4) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}containers" ;;
                 5) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}disk" ;;
+                6) SELECTED_MODULES="${SELECTED_MODULES:+$SELECTED_MODULES,}network" ;;
                 *) warn "Unknown module number: $num — skipping." ;;
             esac
         done
@@ -257,6 +259,17 @@ install_system_deps() {
                 ;;
         esac
     fi
+
+    # network module: tshark
+    if module_selected "network"; then
+        info "Installing system deps for module: network"
+        case "$OS_TYPE" in
+            apt)             install_pkg "tshark" ;;
+            dnf|yum)         install_pkg "wireshark-cli" ;;
+            pacman)          install_pkg "wireshark-cli" ;;
+            brew)            install_pkg "wireshark" ;;
+        esac
+    fi
 }
 
 install_system_deps
@@ -285,6 +298,10 @@ fi
 
 if module_selected "disk"; then
     "$PYTHON" -m pip install pytsk3 --quiet 2>/dev/null && success "Python: pytsk3 installed." || warn "Python: pytsk3 not available — disk analysis will use sleuthkit CLI tools."
+fi
+
+if module_selected "network"; then
+    "$PYTHON" -m pip install scapy --quiet 2>/dev/null && success "Python: scapy installed." || warn "Python: scapy could not be installed — network analysis limited."
 fi
 
 # ------------------------------------------------------------------

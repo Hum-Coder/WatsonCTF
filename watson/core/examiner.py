@@ -199,6 +199,11 @@ class Examiner:
         from watson.techniques.documents.pdf_meta import PDFMeta
         from watson.techniques.containers.zip_extract import ZipExtract
         from watson.techniques.containers.binwalk_wrap import BinwalkWrap
+        from watson.techniques.network.pcap_meta import PcapMeta
+        from watson.techniques.network.stream_reassembly import StreamReassembly
+        from watson.techniques.network.http_objects import HttpObjects
+        from watson.techniques.network.credential_sniffer import CredentialSniffer
+        from watson.techniques.network.dns_exfil import DnsExfil
         from watson.techniques.disk.partition import PartitionAnalysis
         from watson.techniques.disk.filesystem import FilesystemAnalysis
 
@@ -227,6 +232,12 @@ class Examiner:
             PDFMeta(),
             ZipExtract(),
             BinwalkWrap(),
+            # Network
+            PcapMeta(),
+            StreamReassembly(),
+            HttpObjects(),
+            CredentialSniffer(),
+            DnsExfil(),
             # Disk (expensive — run last)
             PartitionAnalysis(),
             FilesystemAnalysis(),
