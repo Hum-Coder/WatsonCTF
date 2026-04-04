@@ -33,10 +33,10 @@ $ watson examine suspicious.png
   ● HIGH  strings_scan
        CTF flag pattern found: picoCTF{w4ts0n_w4s_r1ght}
 
-╔══[ FLAG FOUND ]════════════════════════════════════════╗
+╔══[ FLAG FOUND ]═══════════════════════════════════════╗
 ║  Good heavens — a flag!                               ║
 ║                                                       ║
-║    picoCTF{w4ts0n_w4s_r1ght}                         ║
+║    picoCTF{w4ts0n_w4s_r1ght}                          ║
 ║                                                       ║
 ║  Discovered by: strings_scan                          ║
 ╚═══════════════════════════════════════════════════════╝
