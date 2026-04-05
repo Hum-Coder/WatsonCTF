@@ -20,86 +20,92 @@ class AppendedData(BaseTechnique):
         return mime in _IMAGE_MIMES or mime.startswith("image/")
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
         try:
-            data = path.read_bytes()
-        except OSError as e:
-            return [Finding(technique=self.name, message=f"Could not read file: {e}", confidence="LOW")]
+            findings: List[Finding] = []
+            try:
+                data = path.read_bytes()
+            except OSError as e:
+                return [Finding(technique=self.name, message=f"Could not read file: {e}", confidence="LOW")]
 
-        suffix = path.suffix.lower()
-        mime_lower = ""  # filled via magic if available
+            suffix = path.suffix.lower()
 
-        # Detect format by magic bytes
-        format_name, end_offset = self._find_end(data, suffix)
+            # Detect format by magic bytes
+            format_name, end_offset = self._find_end(data, suffix)
 
-        if format_name is None:
-            return findings  # Can't determine format
+            if format_name is None:
+                return findings  # Can't determine format
 
-        if end_offset is None:
-            findings.append(Finding(
-                technique=self.name,
-                message=f"{format_name}: Could not locate end-of-image marker in file.",
-                confidence="LOW",
-            ))
+            if end_offset is None:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=f"{format_name}: Could not locate end-of-image marker in file.",
+                    confidence="LOW",
+                ))
+                return findings
+
+            file_size = len(data)
+            appended_size = file_size - end_offset
+
+            if appended_size <= 0:
+                return findings  # Nothing after end marker
+
+            appended_data = data[end_offset:]
+
+            # Filter out tiny trailing nulls / padding
+            if appended_size <= 8 and all(b == 0 for b in appended_data):
+                return findings
+
+            # Extract appended data to temp file
+            extracted_files: List[Path] = []
+            try:
+                tmp_dir = tempfile.mkdtemp(prefix="watson_appended_")
+                out_path = Path(tmp_dir) / f"{path.stem}_appended.bin"
+                out_path.write_bytes(appended_data)
+                extracted_files.append(out_path)
+            except OSError:
+                pass
+
+            # Check for flag in appended data
+            try:
+                text = appended_data.decode("utf-8", errors="replace")
+                flag = self._flag_pattern(text)
+            except (ValueError, AttributeError):
+                flag = None
+                text = ""
+
+            if flag:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=(
+                        f"{format_name}: {appended_size} bytes appended after {format_name} end marker. "
+                        f"Flag found: {flag}"
+                    ),
+                    confidence="HIGH",
+                    extracted_files=extracted_files,
+                    flag=flag,
+                ))
+            else:
+                # Check if appended data looks like another file format
+                format_hint = self._sniff_format(appended_data)
+                hint_str = f" (looks like {format_hint})" if format_hint else ""
+
+                findings.append(Finding(
+                    technique=self.name,
+                    message=(
+                        f"{format_name}: {appended_size} bytes appended after end marker{hint_str}. "
+                        f"This is almost always intentional in CTFs."
+                    ),
+                    confidence="HIGH",
+                    extracted_files=extracted_files,
+                ))
+
             return findings
-
-        file_size = len(data)
-        appended_size = file_size - end_offset
-
-        if appended_size <= 0:
-            return findings  # Nothing after end marker
-
-        appended_data = data[end_offset:]
-
-        # Filter out tiny trailing nulls / padding
-        if appended_size <= 8 and all(b == 0 for b in appended_data):
-            return findings
-
-        # Extract appended data to temp file
-        extracted_files: List[Path] = []
-        try:
-            tmp_dir = tempfile.mkdtemp(prefix="watson_appended_")
-            out_path = Path(tmp_dir) / f"{path.stem}_appended.bin"
-            out_path.write_bytes(appended_data)
-            extracted_files.append(out_path)
         except Exception as e:
-            pass
-
-        # Check for flag in appended data
-        try:
-            text = appended_data.decode("utf-8", errors="replace")
-            flag = self._flag_pattern(text)
-        except Exception:
-            flag = None
-            text = ""
-
-        if flag:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=(
-                    f"{format_name}: {appended_size} bytes appended after {format_name} end marker. "
-                    f"Flag found: {flag}"
-                ),
-                confidence="HIGH",
-                extracted_files=extracted_files,
-                flag=flag,
-            ))
-        else:
-            # Check if appended data looks like another file format
-            format_hint = self._sniff_format(appended_data)
-            hint_str = f" (looks like {format_hint})" if format_hint else ""
-
-            findings.append(Finding(
-                technique=self.name,
-                message=(
-                    f"{format_name}: {appended_size} bytes appended after end marker{hint_str}. "
-                    f"This is almost always intentional in CTFs."
-                ),
-                confidence="HIGH",
-                extracted_files=extracted_files,
-            ))
-
-        return findings
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
+                confidence="LOW",
+            )]
 
     # ------------------------------------------------------------------
     # Format-specific end-of-image detection
@@ -126,10 +132,13 @@ class AppendedData(BaseTechnique):
         if data[:2] == b'BM' or suffix == ".bmp":
             if len(data) >= 10:
                 import struct
-                pixel_offset = struct.unpack_from("<I", data, 10)[0]
-                # BMP size is at offset 2
-                bmp_size = struct.unpack_from("<I", data, 2)[0]
-                return ("BMP", bmp_size)
+                try:
+                    pixel_offset = struct.unpack_from("<I", data, 10)[0]
+                    # BMP size is at offset 2
+                    bmp_size = struct.unpack_from("<I", data, 2)[0]
+                    return ("BMP", bmp_size)
+                except struct.error:
+                    return ("BMP", None)
             return ("BMP", None)
 
         return (None, None)

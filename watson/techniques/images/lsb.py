@@ -22,108 +22,118 @@ class LSBDetect(BaseTechnique):
         return mime in _IMAGE_MIMES or mime.startswith("image/")
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
         try:
-            from PIL import Image
-        except ImportError:
-            findings.append(Finding(
-                technique=self.name,
-                message="Pillow not available — LSB analysis skipped.",
-                confidence="LOW",
-            ))
-            return findings
+            findings: List[Finding] = []
+            try:
+                from PIL import Image, UnidentifiedImageError
+            except ImportError:
+                findings.append(Finding(
+                    technique=self.name,
+                    message="Pillow not available — LSB analysis skipped.",
+                    confidence="LOW",
+                ))
+                return findings
 
-        try:
-            img = Image.open(str(path)).convert("RGB")
+            try:
+                img = Image.open(str(path)).convert("RGB")
+            except (OSError, UnidentifiedImageError) as e:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=f"Could not open image for LSB analysis: {e}",
+                    confidence="LOW",
+                ))
+                return findings
+
+            img_rgb = img.convert("RGB")
+            px = img_rgb.load()
+            width, height = img_rgb.size
+            try:
+                pixels = [px[x, y] for y in range(height) for x in range(width)]
+            except (ValueError, IndexError):
+                return findings
+            if not pixels:
+                return findings
+
+            # Extract LSB planes for R, G, B
+            r_lsb = bytes([p[0] & 1 for p in pixels])
+            g_lsb = bytes([p[1] & 1 for p in pixels])
+            b_lsb = bytes([p[2] & 1 for p in pixels])
+
+            for channel_name, lsb_bits in [("R", r_lsb), ("G", g_lsb), ("B", b_lsb)]:
+                entropy = self._bit_entropy(lsb_bits)
+                # Natural noise has ~1.0 bit entropy (50/50 distribution)
+                # Hidden data tends toward high-entropy near 1.0; structured data is lower
+                if entropy < 0.7:
+                    # Low entropy — could be structured hidden data or blank
+                    # Attempt to decode as ASCII
+                    text = self._bits_to_ascii(lsb_bits)
+                    flag = self._flag_pattern(text) if text else None
+                    if flag:
+                        findings.append(Finding(
+                            technique=self.name,
+                            message=f"LSB channel {channel_name}: Flag found! Entropy={entropy:.3f}",
+                            confidence="HIGH",
+                            flag=flag,
+                        ))
+                    elif text and len(text) >= 8:
+                        findings.append(Finding(
+                            technique=self.name,
+                            message=f"LSB channel {channel_name}: Low entropy ({entropy:.3f}), decoded text: {text[:80]}",
+                            confidence="MED",
+                        ))
+                    else:
+                        findings.append(Finding(
+                            technique=self.name,
+                            message=f"LSB channel {channel_name}: Low entropy ({entropy:.3f}) — may indicate structured hidden data.",
+                            confidence="MED",
+                        ))
+                elif entropy > 0.99:
+                    # Very high entropy — check for hidden text anyway
+                    text = self._bits_to_ascii(lsb_bits)
+                    flag = self._flag_pattern(text) if text else None
+                    if flag:
+                        findings.append(Finding(
+                            technique=self.name,
+                            message=f"LSB channel {channel_name}: Flag found in high-entropy LSB data! ",
+                            confidence="HIGH",
+                            flag=flag,
+                        ))
+                    elif text and self._looks_interesting(text):
+                        findings.append(Finding(
+                            technique=self.name,
+                            message=f"LSB channel {channel_name}: High entropy ({entropy:.3f}), possible steganography. Text: {text[:60]}",
+                            confidence="LOW",
+                        ))
+
+            # Also attempt sequential bit extraction across all channels (common steg tool pattern)
+            all_bits = bytearray()
+            for p in pixels:
+                all_bits.extend([p[0] & 1, p[1] & 1, p[2] & 1])
+
+            seq_text = self._bits_to_ascii(bytes(all_bits))
+            if seq_text:
+                flag = self._flag_pattern(seq_text)
+                if flag:
+                    findings.append(Finding(
+                        technique=self.name,
+                        message=f"Sequential RGB LSB extraction yielded flag: {flag}",
+                        confidence="HIGH",
+                        flag=flag,
+                    ))
+                elif self._looks_interesting(seq_text) and len(seq_text) >= 10:
+                    findings.append(Finding(
+                        technique=self.name,
+                        message=f"Sequential LSB text: {seq_text[:100]}",
+                        confidence="MED",
+                    ))
+
+            return findings
         except Exception as e:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=f"Could not open image for LSB analysis: {e}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
-            return findings
-
-        img_rgb = img.convert("RGB")
-        px = img_rgb.load()
-        width, height = img_rgb.size
-        pixels = [px[x, y] for y in range(height) for x in range(width)]
-        if not pixels:
-            return findings
-
-        # Extract LSB planes for R, G, B
-        r_lsb = bytes([p[0] & 1 for p in pixels])
-        g_lsb = bytes([p[1] & 1 for p in pixels])
-        b_lsb = bytes([p[2] & 1 for p in pixels])
-
-        for channel_name, lsb_bits in [("R", r_lsb), ("G", g_lsb), ("B", b_lsb)]:
-            entropy = self._bit_entropy(lsb_bits)
-            # Natural noise has ~1.0 bit entropy (50/50 distribution)
-            # Hidden data tends toward high-entropy near 1.0; structured data is lower
-            if entropy < 0.7:
-                # Low entropy — could be structured hidden data or blank
-                # Attempt to decode as ASCII
-                text = self._bits_to_ascii(lsb_bits)
-                flag = self._flag_pattern(text) if text else None
-                if flag:
-                    findings.append(Finding(
-                        technique=self.name,
-                        message=f"LSB channel {channel_name}: Flag found! Entropy={entropy:.3f}",
-                        confidence="HIGH",
-                        flag=flag,
-                    ))
-                elif text and len(text) >= 8:
-                    findings.append(Finding(
-                        technique=self.name,
-                        message=f"LSB channel {channel_name}: Low entropy ({entropy:.3f}), decoded text: {text[:80]}",
-                        confidence="MED",
-                    ))
-                else:
-                    findings.append(Finding(
-                        technique=self.name,
-                        message=f"LSB channel {channel_name}: Low entropy ({entropy:.3f}) — may indicate structured hidden data.",
-                        confidence="MED",
-                    ))
-            elif entropy > 0.99:
-                # Very high entropy — check for hidden text anyway
-                text = self._bits_to_ascii(lsb_bits)
-                flag = self._flag_pattern(text) if text else None
-                if flag:
-                    findings.append(Finding(
-                        technique=self.name,
-                        message=f"LSB channel {channel_name}: Flag found in high-entropy LSB data! ",
-                        confidence="HIGH",
-                        flag=flag,
-                    ))
-                elif text and self._looks_interesting(text):
-                    findings.append(Finding(
-                        technique=self.name,
-                        message=f"LSB channel {channel_name}: High entropy ({entropy:.3f}), possible steganography. Text: {text[:60]}",
-                        confidence="LOW",
-                    ))
-
-        # Also attempt sequential bit extraction across all channels (common steg tool pattern)
-        all_bits = bytearray()
-        for p in pixels:
-            all_bits.extend([p[0] & 1, p[1] & 1, p[2] & 1])
-
-        seq_text = self._bits_to_ascii(bytes(all_bits))
-        if seq_text:
-            flag = self._flag_pattern(seq_text)
-            if flag:
-                findings.append(Finding(
-                    technique=self.name,
-                    message=f"Sequential RGB LSB extraction yielded flag: {flag}",
-                    confidence="HIGH",
-                    flag=flag,
-                ))
-            elif self._looks_interesting(seq_text) and len(seq_text) >= 10:
-                findings.append(Finding(
-                    technique=self.name,
-                    message=f"Sequential LSB text: {seq_text[:100]}",
-                    confidence="MED",
-                ))
-
-        return findings
+            )]
 
     # ------------------------------------------------------------------
     # Helpers

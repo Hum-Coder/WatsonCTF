@@ -47,19 +47,26 @@ class BinwalkWrap(BaseTechnique):
         return True  # universal — any file may have embedded content
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
+        try:
+            findings: List[Finding] = []
 
-        if shutil.which("binwalk"):
-            findings.extend(self._run_binwalk(path))
-        else:
-            findings.append(Finding(
+            if shutil.which("binwalk"):
+                findings.extend(self._run_binwalk(path))
+            else:
+                findings.append(Finding(
+                    technique=self.name,
+                    message="binwalk not found — using pure-Python magic-byte scanner. Install binwalk for full carving.",
+                    confidence="LOW",
+                ))
+                findings.extend(self._python_scan(path))
+
+            return findings
+        except Exception as e:
+            return [Finding(
                 technique=self.name,
-                message="binwalk not found — using pure-Python magic-byte scanner. Install binwalk for full carving.",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
-            findings.extend(self._python_scan(path))
-
-        return findings
+            )]
 
     # ------------------------------------------------------------------
     # Binwalk
@@ -127,7 +134,7 @@ class BinwalkWrap(BaseTechnique):
                 message="binwalk timed out (>120s).",
                 confidence="LOW",
             ))
-        except Exception as e:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"binwalk error: {e}",
