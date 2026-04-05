@@ -192,6 +192,7 @@ class Examiner:
 
         from watson.techniques.universal.strings_scan import StringsScan
         from watson.techniques.universal.encoding_detect import EncodingDetect
+        from watson.techniques.universal.cipher_id import CipherIdentify
         from watson.techniques.images.metadata import ImageMetadata
         from watson.techniques.images.lsb import LSBDetect
         from watson.techniques.images.appended import AppendedData
@@ -224,6 +225,7 @@ class Examiner:
             # Universal (always run first)
             StringsScan(),
             EncodingDetect(),
+            CipherIdentify(),
             # Format-specific
             ImageMetadata(),
             LSBDetect(),
