@@ -57,38 +57,45 @@ class FilesystemAnalysis(BaseTechnique):
             return False
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
-
-        if os.geteuid() != 0:
-            findings.append(Finding(
-                technique=self.name,
-                message="Not running as root — filesystem mounting skipped. For full analysis, run as root.",
-                confidence="LOW",
-            ))
-
-        # Try pytsk3
         try:
-            import pytsk3  # type: ignore
-            findings.extend(self._analyze_pytsk3(path))
+            findings: List[Finding] = []
+
+            if os.geteuid() != 0:
+                findings.append(Finding(
+                    technique=self.name,
+                    message="Not running as root — filesystem mounting skipped. For full analysis, run as root.",
+                    confidence="LOW",
+                ))
+
+            # Try pytsk3
+            try:
+                import pytsk3  # type: ignore
+                findings.extend(self._analyze_pytsk3(path))
+                return findings
+            except ImportError:
+                pass
+
+            # Try sleuthkit CLI
+            if shutil.which("fls"):
+                findings.extend(self._analyze_fls(path))
+            else:
+                findings.append(Finding(
+                    technique=self.name,
+                    message="Neither pytsk3 nor fls (sleuthkit) available. Install: apt install sleuthkit",
+                    confidence="LOW",
+                ))
+
+            # Try mounting (root only)
+            if os.geteuid() == 0 and shutil.which("mount"):
+                findings.extend(self._mount_and_walk(path))
+
             return findings
-        except ImportError:
-            pass
-
-        # Try sleuthkit CLI
-        if shutil.which("fls"):
-            findings.extend(self._analyze_fls(path))
-        else:
-            findings.append(Finding(
+        except Exception as e:
+            return [Finding(
                 technique=self.name,
-                message="Neither pytsk3 nor fls (sleuthkit) available. Install: apt install sleuthkit",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
-
-        # Try mounting (root only)
-        if os.geteuid() == 0 and shutil.which("mount"):
-            findings.extend(self._mount_and_walk(path))
-
-        return findings
+            )]
 
     # ------------------------------------------------------------------
     # pytsk3
@@ -295,13 +302,7 @@ class FilesystemAnalysis(BaseTechnique):
                 if shutil.which("icat"):
                     findings.extend(self._recover_deleted(path, result.stdout))
 
-        except subprocess.TimeoutExpired:
-            findings.append(Finding(
-                technique=self.name,
-                message="fls timed out.",
-                confidence="LOW",
-            ))
-        except Exception as e:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"fls error: {e}",

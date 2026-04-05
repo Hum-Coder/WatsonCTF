@@ -5,6 +5,7 @@ Reconstructs TCP streams and scans for plaintext credentials.
 from __future__ import annotations
 
 import base64
+import binascii
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -54,7 +55,7 @@ class CredentialSniffer(BaseTechnique):
 
             try:
                 packets = rdpcap(str(path), count=10000)
-            except Exception as e:
+            except (OSError, Exception) as e:
                 findings.append(Finding(
                     technique=self.name,
                     message=f"Could not read PCAP for credential sniffing: {e}",
@@ -76,7 +77,7 @@ class CredentialSniffer(BaseTechnique):
                         pkt[IP].dst, pkt[TCP].dport,
                     )
                     streams[key].append((pkt[TCP].seq, payload))
-                except Exception:
+                except (AttributeError, IndexError, UnicodeDecodeError):
                     continue
 
             seen_creds: Set[str] = set()
@@ -102,7 +103,7 @@ class CredentialSniffer(BaseTechnique):
                                 confidence="HIGH",
                                 flag=flag,
                             ))
-                except Exception:
+                except (AttributeError, IndexError, UnicodeDecodeError):
                     text = ""
 
                 # FTP credentials (port 21)
@@ -131,11 +132,11 @@ class CredentialSniffer(BaseTechnique):
                         ))
 
         except Exception as e:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=f"credential_sniffer error (non-fatal): {e}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
+            )]
 
         return findings
 
@@ -162,7 +163,7 @@ class CredentialSniffer(BaseTechnique):
                         message=f"FTP credentials found ({src_ip} -> {dst_ip}): user={user} pass={password}",
                         confidence="MED",
                     ))
-        except Exception:
+        except (AttributeError, IndexError, UnicodeDecodeError):
             pass
         return findings
 
@@ -188,9 +189,9 @@ class CredentialSniffer(BaseTechnique):
                             message=f"HTTP Basic Auth ({src_ip} -> {dst_ip}): {decoded}",
                             confidence="MED",
                         ))
-                except Exception:
+                except (ValueError, binascii.Error):
                     pass
-        except Exception:
+        except (AttributeError, IndexError, UnicodeDecodeError):
             pass
         return findings
 
@@ -217,7 +218,7 @@ class CredentialSniffer(BaseTechnique):
                         message=f"HTTP form credentials ({src_ip} -> {dst_ip}): password field = {value[:80]}",
                         confidence="MED",
                     ))
-        except Exception:
+        except (AttributeError, IndexError, UnicodeDecodeError):
             pass
         return findings
 
@@ -259,7 +260,7 @@ class CredentialSniffer(BaseTechnique):
                                 message=f"SMTP AUTH PLAIN ({src_ip} -> {dst_ip}): {decoded[:80]}",
                                 confidence="MED",
                             ))
-                except Exception:
+                except (ValueError, binascii.Error):
                     pass
 
             # AUTH LOGIN — sequential base64 lines after AUTH LOGIN
@@ -280,7 +281,7 @@ class CredentialSniffer(BaseTechnique):
                             try:
                                 decoded = base64.b64decode(stripped).decode("utf-8", errors="replace")
                                 b64_values.append(decoded)
-                            except Exception:
+                            except (ValueError, binascii.Error):
                                 pass
                     if b64_values:
                         cred_key = f"smtp_login:{'|'.join(b64_values)}"
@@ -293,6 +294,6 @@ class CredentialSniffer(BaseTechnique):
                                 confidence="MED",
                             ))
 
-        except Exception:
+        except (AttributeError, IndexError, UnicodeDecodeError):
             pass
         return findings

@@ -26,20 +26,27 @@ class AudioSpectrogram(BaseTechnique):
         return mime in _AUDIO_MIMES or mime.startswith("audio/")
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
+        try:
+            findings: List[Finding] = []
 
-        # --- Mutagen metadata ---
-        findings.extend(self._check_metadata(path))
+            # --- Mutagen metadata ---
+            findings.extend(self._check_metadata(path))
 
-        # --- Spectrogram ---
-        spec_findings, spec_image = self._generate_spectrogram(path)
-        findings.extend(spec_findings)
+            # --- Spectrogram ---
+            spec_findings, spec_image = self._generate_spectrogram(path)
+            findings.extend(spec_findings)
 
-        # --- LSB in samples (WAV only, pure Python) ---
-        if path.suffix.lower() == ".wav":
-            findings.extend(self._wav_lsb(path))
+            # --- LSB in samples (WAV only, pure Python) ---
+            if path.suffix.lower() == ".wav":
+                findings.extend(self._wav_lsb(path))
 
-        return findings
+            return findings
+        except Exception as e:
+            return [Finding(
+                technique=self.name,
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
+                confidence="LOW",
+            )]
 
     # ------------------------------------------------------------------
     # Metadata via mutagen
@@ -91,7 +98,7 @@ class AudioSpectrogram(BaseTechnique):
                     confidence="LOW",
                 ))
 
-        except Exception as e:
+        except (mutagen.MutagenError, OSError, Exception) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"mutagen error: {e}",
@@ -173,7 +180,7 @@ class AudioSpectrogram(BaseTechnique):
                     confidence="LOW",
                 ))
 
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"Spectrogram generation failed: {e}",

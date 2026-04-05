@@ -42,63 +42,70 @@ class PartitionAnalysis(BaseTechnique):
             return False
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
-
-        # Warn if not root
-        if os.geteuid() != 0:
-            findings.append(Finding(
-                technique=self.name,
-                message="Not running as root — some disk analysis features may be limited.",
-                confidence="LOW",
-            ))
-
-        # Detect image format
-        image_format, converted_path = self._prepare_image(path)
-        work_path = converted_path or path
-
-        # Detect partition scheme
-        scheme = self._detect_scheme(work_path)
-        if scheme:
-            findings.append(Finding(
-                technique=self.name,
-                message=f"Disk image detected. Partition scheme: {scheme}",
-                confidence="MED",
-            ))
-        else:
-            findings.append(Finding(
-                technique=self.name,
-                message="Could not detect MBR or GPT signature — may not be a standard disk image.",
-                confidence="LOW",
-            ))
-            return findings
-
-        # Parse partitions
         try:
-            import pytsk3  # type: ignore
-            findings.extend(self._analyze_pytsk3(work_path))
-        except ImportError:
-            if shutil.which("mmls"):
-                findings.extend(self._analyze_mmls(work_path))
+            findings: List[Finding] = []
+
+            # Warn if not root
+            if os.geteuid() != 0:
+                findings.append(Finding(
+                    technique=self.name,
+                    message="Not running as root — some disk analysis features may be limited.",
+                    confidence="LOW",
+                ))
+
+            # Detect image format
+            image_format, converted_path = self._prepare_image(path)
+            work_path = converted_path or path
+
+            # Detect partition scheme
+            scheme = self._detect_scheme(work_path)
+            if scheme:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=f"Disk image detected. Partition scheme: {scheme}",
+                    confidence="MED",
+                ))
             else:
                 findings.append(Finding(
                     technique=self.name,
-                    message="Neither pytsk3 nor mmls (sleuthkit) available. Install: apt install sleuthkit",
+                    message="Could not detect MBR or GPT signature — may not be a standard disk image.",
                     confidence="LOW",
                 ))
-                # Fall back to manual MBR parsing
-                findings.extend(self._parse_mbr_manual(work_path))
+                return findings
 
-        # Analyse unallocated space entropy
-        findings.extend(self._check_unallocated(work_path))
-
-        # Clean up converted image
-        if converted_path and converted_path.exists():
+            # Parse partitions
             try:
-                converted_path.unlink()
-            except Exception:
-                pass
+                import pytsk3  # type: ignore
+                findings.extend(self._analyze_pytsk3(work_path))
+            except ImportError:
+                if shutil.which("mmls"):
+                    findings.extend(self._analyze_mmls(work_path))
+                else:
+                    findings.append(Finding(
+                        technique=self.name,
+                        message="Neither pytsk3 nor mmls (sleuthkit) available. Install: apt install sleuthkit",
+                        confidence="LOW",
+                    ))
+                    # Fall back to manual MBR parsing
+                    findings.extend(self._parse_mbr_manual(work_path))
 
-        return findings
+            # Analyse unallocated space entropy
+            findings.extend(self._check_unallocated(work_path))
+
+            # Clean up converted image
+            if converted_path and converted_path.exists():
+                try:
+                    converted_path.unlink()
+                except OSError:
+                    pass
+
+            return findings
+        except Exception as e:
+            return [Finding(
+                technique=self.name,
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
+                confidence="LOW",
+            )]
 
     # ------------------------------------------------------------------
     # Image preparation
@@ -209,13 +216,7 @@ class PartitionAnalysis(BaseTechnique):
                         message=f"Partition: {line}",
                         confidence="LOW",
                     ))
-        except subprocess.TimeoutExpired:
-            findings.append(Finding(
-                technique=self.name,
-                message="mmls timed out.",
-                confidence="LOW",
-            ))
-        except Exception as e:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"mmls error: {e}",
@@ -270,7 +271,7 @@ class PartitionAnalysis(BaseTechnique):
                     confidence="LOW",
                 ))
 
-        except Exception as e:
+        except (struct.error, OSError) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"Manual MBR parse error: {e}",
