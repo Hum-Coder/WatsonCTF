@@ -61,7 +61,7 @@ class StreamReassembly(BaseTechnique):
 
             try:
                 packets = rdpcap(str(path), count=10000)
-            except Exception as e:
+            except (OSError, Exception) as e:
                 findings.append(Finding(
                     technique=self.name,
                     message=f"Could not read PCAP for stream reassembly: {e}",
@@ -86,7 +86,7 @@ class StreamReassembly(BaseTechnique):
                     )
                     seq = pkt[TCP].seq
                     streams[key].append((seq, payload))
-                except Exception:
+                except (AttributeError, IndexError, KeyError):
                     continue
 
             stream_count = len(streams)
@@ -148,7 +148,7 @@ class StreamReassembly(BaseTechnique):
                 stream_file = Path(tmp_dir) / fname
                 try:
                     stream_file.write_bytes(payload)
-                except Exception:
+                except OSError:
                     processed += 1
                     continue
 
@@ -183,10 +183,10 @@ class StreamReassembly(BaseTechnique):
                 ))
 
         except Exception as e:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=f"stream_reassembly error (non-fatal): {e}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
+            )]
 
         return findings

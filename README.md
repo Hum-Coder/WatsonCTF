@@ -98,6 +98,48 @@ watson doctor
 | `--extract-dir / -o` | temp dir | Keep extracted files here |
 | `--verbose / -v` | off | Show technique-level detail |
 | `--aggressive / -a` | off | Sets depth=6, max-files=100 |
+| `--modules / -m` | from config | Only use these modules, e.g. `core,images` |
+| `--skip / -s` | none | Skip these modules for this run |
+
+### Module management
+
+```bash
+watson modules list                  # show all modules and their status
+watson modules enable disk           # enable for all future runs
+watson modules disable audio         # disable for all future runs
+watson modules install network       # show install commands for a module
+```
+
+Modules: `core` `images` `audio` `documents` `containers` `disk` `network`
+
+`core` is always on and cannot be disabled. Default install enables `core`, `images`, and `containers`.
+
+### Configuration
+
+Watson stores its settings in `~/.config/watson/watson.cfg` — a plain text file you can edit directly.
+
+```bash
+watson config show                         # print all settings
+watson config set core.default_depth 5    # set examine depth permanently
+watson config set core.extract_dir ~/ctf/artifacts
+watson config set flags.extra_patterns lactf\{[^}]+\},uiuctf\{[^}]+\}
+watson config get core.default_depth       # read a single value
+watson config reset                        # restore defaults
+watson config path                         # print the config file location
+```
+
+Key settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `core.default_depth` | `3` | Default `--depth` |
+| `core.default_max_files` | `25` | Default `--max-files` |
+| `core.aggressive` | `false` | Always run in aggressive mode |
+| `core.extract_dir` | *(temp)* | Always keep extracted files here |
+| `core.verbose` | `false` | Always verbose |
+| `output.theme` | `true` | Watson quotes and case notes framing |
+| `output.color` | `true` | Rich colour output |
+| `flags.extra_patterns` | *(empty)* | Extra flag regexes, comma-separated |
 
 ---
 
@@ -141,6 +183,21 @@ Any file type
 - Encoding detection: base64, hex, rot13, URL encoding — decoded and re-checked
 - Magic byte scanning for embedded files at non-zero offsets
 - `binwalk` carving if available
+
+### Cipher identification
+Any file type
+
+Watson identifies cipher types by statistical analysis — it won't break them, but it tells you what you're looking at and shows you the ciphertext.
+
+- **RSA** — PEM blocks, SSH public keys, CTF-style `n/e/c` parameter dumps. Flags weak keys (small `n`, `e=3`, `p≈q`) with attack hints
+- **Caesar / ROT-N** — frequency analysis picks the most likely shift, shows decoded text. If the shift produces a flag, it's reported immediately
+- **Vigenère** — Index of Coincidence detection, Kasiski test estimates key length
+- **Atbash** — reversed alphabet detection
+- **Morse code** — character set detection, decoded inline
+- **Bacon cipher** — A/B pattern detection, decoded inline
+- **XOR** — entropy + Hamming distance key length estimation
+- **AES-ECB** — high entropy + identical 16-byte blocks
+- **Block ciphers** — high entropy + block-aligned length
 
 ### Network captures
 `.pcap` `.pcapng` `.cap`

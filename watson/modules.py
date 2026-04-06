@@ -71,8 +71,8 @@ class Module:
 MODULES: Dict[str, Module] = {
     "core": Module(
         name="core",
-        description="Universal techniques — strings, encoding detection",
-        techniques=["StringsScan", "EncodingDetect"],
+        description="Universal techniques — strings, encoding detection, cipher identification",
+        techniques=["StringsScan", "EncodingDetect", "CipherIdentify"],
         python_deps={"magic": "python-magic"},
         system_deps=[],
         apt_pkgs=[],

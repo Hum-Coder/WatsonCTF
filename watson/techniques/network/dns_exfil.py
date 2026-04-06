@@ -53,7 +53,7 @@ def _looks_base64(s: str) -> bool:
         padded = cleaned + "=" * (4 - len(cleaned) % 4) if len(cleaned) % 4 else cleaned
         base64.b64decode(padded)
         return True
-    except Exception:
+    except (ValueError, binascii.Error):
         return False
 
 
@@ -63,7 +63,7 @@ def _try_decode(data: str) -> str:
     if _HEX_RE.match(data):
         try:
             return bytes.fromhex(data).decode("utf-8", errors="replace")
-        except Exception:
+        except (ValueError, binascii.Error):
             pass
 
     # Try base64
@@ -71,7 +71,7 @@ def _try_decode(data: str) -> str:
     try:
         padded = cleaned + "=" * (4 - len(cleaned) % 4) if len(cleaned) % 4 else cleaned
         return base64.b64decode(padded).decode("utf-8", errors="replace")
-    except Exception:
+    except (ValueError, binascii.Error):
         pass
 
     return ""
@@ -108,7 +108,7 @@ class DnsExfil(BaseTechnique):
 
             try:
                 packets = rdpcap(str(path), count=10000)
-            except Exception as e:
+            except (OSError, Exception) as e:
                 findings.append(Finding(
                     technique=self.name,
                     message=f"Could not read PCAP for DNS analysis: {e}",
@@ -146,7 +146,7 @@ class DnsExfil(BaseTechnique):
                     subdomain, base = _base_domain(qname)
                     if subdomain:
                         domain_queries[base].append(subdomain)
-                except Exception:
+                except (AttributeError, IndexError):
                     continue
 
             if total_dns == 0:
@@ -229,10 +229,10 @@ class DnsExfil(BaseTechnique):
                     ))
 
         except Exception as e:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=f"dns_exfil error (non-fatal): {e}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
+            )]
 
         return findings

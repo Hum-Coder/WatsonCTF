@@ -22,73 +22,80 @@ class StringsScan(BaseTechnique):
         return True  # universal
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
         try:
-            data = path.read_bytes()
-        except OSError as e:
-            return [Finding(
-                technique=self.name,
-                message=f"Could not read file: {e}",
-                confidence="LOW",
-            )]
+            findings: List[Finding] = []
+            try:
+                data = path.read_bytes()
+            except OSError as e:
+                return [Finding(
+                    technique=self.name,
+                    message=f"Could not read file: {e}",
+                    confidence="LOW",
+                )]
 
-        strings = self._extract_strings(data)
-        combined = "\n".join(strings)
+            strings = self._extract_strings(data)
+            combined = "\n".join(strings)
 
-        # --- CTF flag patterns ---
-        flags = self._find_all_flags(combined)
-        if flags:
-            for flag in flags:
+            # --- CTF flag patterns ---
+            flags = self._find_all_flags(combined)
+            if flags:
+                for flag in flags:
+                    findings.append(Finding(
+                        technique=self.name,
+                        message=f"CTF flag pattern found: {flag}",
+                        confidence="HIGH",
+                        flag=flag,
+                    ))
+
+            # --- Credential heuristics ---
+            cred_patterns = [
+                r'(?i)(password|passwd|pwd)\s*[=:]\s*\S+',
+                r'(?i)(api[_-]?key|apikey)\s*[=:]\s*\S+',
+                r'(?i)(secret|token)\s*[=:]\s*\S+',
+                r'(?i)(key)\s*[=:]\s*[A-Za-z0-9+/]{8,}',
+            ]
+            cred_hits = []
+            for pat in cred_patterns:
+                for m in re.finditer(pat, combined):
+                    hit = m.group(0)[:120]
+                    if hit not in cred_hits:
+                        cred_hits.append(hit)
+            if cred_hits:
                 findings.append(Finding(
                     technique=self.name,
-                    message=f"CTF flag pattern found: {flag}",
-                    confidence="HIGH",
-                    flag=flag,
+                    message=f"Possible credentials/keys found ({len(cred_hits)} match(es)): {cred_hits[0][:80]}",
+                    confidence="MED",
                 ))
 
-        # --- Credential heuristics ---
-        cred_patterns = [
-            r'(?i)(password|passwd|pwd)\s*[=:]\s*\S+',
-            r'(?i)(api[_-]?key|apikey)\s*[=:]\s*\S+',
-            r'(?i)(secret|token)\s*[=:]\s*\S+',
-            r'(?i)(key)\s*[=:]\s*[A-Za-z0-9+/]{8,}',
-        ]
-        cred_hits = []
-        for pat in cred_patterns:
-            for m in re.finditer(pat, combined):
-                hit = m.group(0)[:120]
-                if hit not in cred_hits:
-                    cred_hits.append(hit)
-        if cred_hits:
-            findings.append(Finding(
-                technique=self.name,
-                message=f"Possible credentials/keys found ({len(cred_hits)} match(es)): {cred_hits[0][:80]}",
-                confidence="MED",
-            ))
+            # --- Base64-looking strings ---
+            b64_pattern = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
+            b64_hits = [m.group(0) for m in b64_pattern.finditer(combined)]
+            # Filter out runs that look like hex or pure alpha words
+            b64_hits = [s for s in b64_hits if self._looks_b64(s)]
+            if b64_hits:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=f"Base64-like strings found ({len(b64_hits)}): e.g. {b64_hits[0][:60]}",
+                    confidence="LOW",
+                ))
 
-        # --- Base64-looking strings ---
-        b64_pattern = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
-        b64_hits = [m.group(0) for m in b64_pattern.finditer(combined)]
-        # Filter out runs that look like hex or pure alpha words
-        b64_hits = [s for s in b64_hits if self._looks_b64(s)]
-        if b64_hits:
-            findings.append(Finding(
+            # --- URLs ---
+            url_pattern = re.compile(r'https?://[^\s\x00-\x1f"\'<>]{8,}')
+            urls = list(dict.fromkeys(url_pattern.findall(combined)))  # deduplicate
+            if urls:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=f"URLs found ({len(urls)}): {urls[0][:100]}",
+                    confidence="LOW",
+                ))
+
+            return findings
+        except Exception as e:
+            return [Finding(
                 technique=self.name,
-                message=f"Base64-like strings found ({len(b64_hits)}): e.g. {b64_hits[0][:60]}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
-
-        # --- URLs ---
-        url_pattern = re.compile(r'https?://[^\s\x00-\x1f"\'<>]{8,}')
-        urls = list(dict.fromkeys(url_pattern.findall(combined)))  # deduplicate
-        if urls:
-            findings.append(Finding(
-                technique=self.name,
-                message=f"URLs found ({len(urls)}): {urls[0][:100]}",
-                confidence="LOW",
-            ))
-
-        return findings
+            )]
 
     # ------------------------------------------------------------------
     # Helpers

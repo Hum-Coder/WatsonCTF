@@ -49,7 +49,7 @@ class PcapMeta(BaseTechnique):
                     fmt = "PCAPNG"
                 else:
                     fmt = "unknown"
-            except Exception:
+            except OSError:
                 fmt = "unknown"
 
             # Try to import scapy
@@ -68,7 +68,7 @@ class PcapMeta(BaseTechnique):
             # Read packets (limit to 10000)
             try:
                 packets = rdpcap(str(path), count=10000)
-            except Exception as e:
+            except (OSError, Exception) as e:
                 findings.append(Finding(
                     technique=self.name,
                     message=f"Could not read PCAP: {e}",
@@ -141,9 +141,9 @@ class PcapMeta(BaseTechnique):
                             flag = self._flag_pattern(text)
                             if flag:
                                 flag_found = flag
-                        except Exception:
+                        except (AttributeError, IndexError):
                             pass
-                except Exception:
+                except (AttributeError, IndexError):
                     continue
 
             unique_hosts = len(src_ips | dst_ips)
@@ -177,10 +177,10 @@ class PcapMeta(BaseTechnique):
                 ))
 
         except Exception as e:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=f"pcap_meta error (non-fatal): {e}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
+            )]
 
         return findings

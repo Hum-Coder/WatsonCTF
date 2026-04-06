@@ -107,7 +107,7 @@ class HttpObjects(BaseTechnique):
                         message="tshark timed out during HTTP object export.",
                         confidence="LOW",
                     ))
-                except Exception as e:
+                except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
                     findings.append(Finding(
                         technique=self.name,
                         message=f"tshark error: {e}",
@@ -130,11 +130,11 @@ class HttpObjects(BaseTechnique):
             findings.extend(multipart_findings)
 
         except Exception as e:
-            findings.append(Finding(
+            return [Finding(
                 technique=self.name,
-                message=f"http_objects error (non-fatal): {e}",
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
                 confidence="LOW",
-            ))
+            )]
 
         return findings
 
@@ -220,7 +220,7 @@ class HttpObjects(BaseTechnique):
                             confidence="LOW",
                             extracted_files=[obj_path],
                         ))
-                except Exception:
+                except (ValueError, IndexError, AttributeError):
                     continue
 
         if obj_count > 0:

@@ -28,24 +28,31 @@ class PDFMeta(BaseTechnique):
             return False
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
-
-        # Try pypdf first
         try:
-            import pypdf  # type: ignore
-            findings.extend(self._analyze_pypdf(path))
-        except ImportError:
-            # Fall back to pdfinfo subprocess
-            findings.extend(self._analyze_pdfinfo(path))
-        except Exception as e:
-            findings.append(Finding(
-                technique=self.name,
-                message=f"pypdf error: {e}",
-                confidence="LOW",
-            ))
-            findings.extend(self._analyze_pdfinfo(path))
+            findings: List[Finding] = []
 
-        return findings
+            # Try pypdf first
+            try:
+                import pypdf  # type: ignore
+                findings.extend(self._analyze_pypdf(path))
+            except ImportError:
+                # Fall back to pdfinfo subprocess
+                findings.extend(self._analyze_pdfinfo(path))
+            except (OSError, Exception) as e:
+                findings.append(Finding(
+                    technique=self.name,
+                    message=f"pypdf error: {e}",
+                    confidence="LOW",
+                ))
+                findings.extend(self._analyze_pdfinfo(path))
+
+            return findings
+        except Exception as e:
+            return [Finding(
+                technique=self.name,
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
+                confidence="LOW",
+            )]
 
     # ------------------------------------------------------------------
     # pypdf analysis
@@ -57,7 +64,7 @@ class PDFMeta(BaseTechnique):
 
         try:
             reader = pypdf.PdfReader(str(path))
-        except Exception as e:
+        except (OSError, Exception) as e:
             findings.append(Finding(
                 technique=self.name,
                 message=f"Could not open PDF with pypdf: {e}",
@@ -227,22 +234,10 @@ class PDFMeta(BaseTechnique):
                                 confidence="LOW",
                             ))
 
-        except FileNotFoundError:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             findings.append(Finding(
                 technique=self.name,
-                message="Neither pypdf nor pdfinfo available. Install: pip install pypdf",
-                confidence="LOW",
-            ))
-        except subprocess.TimeoutExpired:
-            findings.append(Finding(
-                technique=self.name,
-                message="pdfinfo timed out.",
-                confidence="LOW",
-            ))
-        except Exception as e:
-            findings.append(Finding(
-                technique=self.name,
-                message=f"PDF analysis error: {e}",
+                message=f"pdfinfo subprocess error: {e}",
                 confidence="LOW",
             ))
 

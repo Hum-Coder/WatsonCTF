@@ -26,33 +26,40 @@ class EncodingDetect(BaseTechnique):
         return True  # universal
 
     def examine(self, path: Path) -> List[Finding]:
-        findings: List[Finding] = []
         try:
-            raw = path.read_bytes()[:self._MAX_BYTES]
-        except OSError as e:
-            return [Finding(technique=self.name, message=f"Could not read file: {e}", confidence="LOW")]
+            findings: List[Finding] = []
+            try:
+                raw = path.read_bytes()[:self._MAX_BYTES]
+            except OSError as e:
+                return [Finding(technique=self.name, message=f"Could not read file: {e}", confidence="LOW")]
 
-        # Extract printable strings
-        strings = self._extract_printable(raw)
-        combined_text = "\n".join(strings)
+            # Extract printable strings
+            strings = self._extract_printable(raw)
+            combined_text = "\n".join(strings)
 
-        # --- Base64 decode candidates ---
-        b64_findings = self._check_base64(strings)
-        findings.extend(b64_findings)
+            # --- Base64 decode candidates ---
+            b64_findings = self._check_base64(strings)
+            findings.extend(b64_findings)
 
-        # --- Hex string decode ---
-        hex_findings = self._check_hex(strings)
-        findings.extend(hex_findings)
+            # --- Hex string decode ---
+            hex_findings = self._check_hex(strings)
+            findings.extend(hex_findings)
 
-        # --- rot13 ---
-        rot_findings = self._check_rot13(strings)
-        findings.extend(rot_findings)
+            # --- rot13 ---
+            rot_findings = self._check_rot13(strings)
+            findings.extend(rot_findings)
 
-        # --- URL encoding ---
-        url_findings = self._check_url_encoding(strings)
-        findings.extend(url_findings)
+            # --- URL encoding ---
+            url_findings = self._check_url_encoding(strings)
+            findings.extend(url_findings)
 
-        return findings
+            return findings
+        except Exception as e:
+            return [Finding(
+                technique=self.name,
+                message=f"Technique failed unexpectedly: {type(e).__name__}: {e}",
+                confidence="LOW",
+            )]
 
     # ------------------------------------------------------------------
     # Base64
@@ -70,7 +77,7 @@ class EncodingDetect(BaseTechnique):
                 padded = candidate + "=" * (-len(candidate) % 4)
                 try:
                     decoded_bytes = base64.b64decode(padded, validate=True)
-                except Exception:
+                except (ValueError, binascii.Error):
                     continue
 
                 # Try to interpret as text
@@ -127,7 +134,7 @@ class EncodingDetect(BaseTechnique):
                     decoded_bytes = binascii.unhexlify(candidate)
                     decoded_str = decoded_bytes.decode("utf-8", errors="replace")
                     decoded_str = decoded_str.strip()
-                except Exception:
+                except ValueError:
                     continue
 
                 flag = self._flag_pattern(decoded_str)
@@ -164,7 +171,10 @@ class EncodingDetect(BaseTechnique):
             # visible flag is not a finding; it would be a false positive.
             if self._flag_pattern(s):
                 continue
-            rotated = codecs.encode(s, "rot_13")
+            try:
+                rotated = codecs.encode(s, "rot_13")
+            except (UnicodeDecodeError, AttributeError):
+                continue
             if rotated in seen:
                 continue
             flag = self._flag_pattern(rotated)
