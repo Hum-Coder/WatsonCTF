@@ -12,6 +12,8 @@ set -e
 
 REPO_URL="https://github.com/Hum-Coder/WatsonCTF.git"
 INSTALL_DIR="${HOME}/.local/share/watson-ctf"
+BRANCH="claude/watson-ctf-solver-P8q4c"
+VENV_DIR="${INSTALL_DIR}/.venv"
 
 BOLD="\033[1m"
 GREEN="\033[32m"
@@ -84,23 +86,65 @@ success "Python $PY_VERSION — satisfactory."
 # ------------------------------------------------------------------
 if [[ -d "$INSTALL_DIR/.git" ]]; then
     info "Updating existing Watson installation at $INSTALL_DIR..."
+    git -C "$INSTALL_DIR" fetch --quiet origin "$BRANCH" 2>/dev/null
+    git -C "$INSTALL_DIR" checkout --quiet "$BRANCH" 2>/dev/null
     git -C "$INSTALL_DIR" pull --quiet && success "Repository updated." || warn "Could not update repo — using existing version."
 else
     info "Cloning Watson into $INSTALL_DIR..."
-    git clone --quiet "$REPO_URL" "$INSTALL_DIR" && success "Repository cloned." || {
+    git clone --quiet --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" && success "Repository cloned." || {
         error "git clone failed. Check your internet connection."
         exit 1
     }
 fi
 
 # ------------------------------------------------------------------
-# 3. Install the pip package (core only — no optional deps yet)
+# 3. Install the pip package — with venv fallback for PEP 668 systems
+#    (Arch, Debian 12+, Ubuntu 23+, Fedora 38+)
 # ------------------------------------------------------------------
 info "Installing watson-ctf package..."
-"$PYTHON" -m pip install -e "$INSTALL_DIR" --quiet && success "watson-ctf installed." || {
-    error "pip install failed. Try running with sudo or inside a virtualenv."
-    exit 1
+
+_try_pip_install() {
+    "$PYTHON" -m pip install -e "$INSTALL_DIR" --quiet 2>/dev/null
 }
+
+_setup_venv() {
+    warn "System Python is externally managed (PEP 668 — Arch/Debian/Ubuntu/Fedora)."
+    info "Creating virtual environment at $VENV_DIR..."
+    "$PYTHON" -m venv "$VENV_DIR" && success "Virtual environment created." || {
+        error "Could not create virtual environment. Install python-venv or python3-venv."
+        exit 1
+    }
+    PYTHON="$VENV_DIR/bin/python"
+    "$PYTHON" -m pip install -e "$INSTALL_DIR" --quiet && success "watson-ctf installed in virtual environment." || {
+        error "pip install in venv failed."
+        exit 1
+    }
+    # Drop a wrapper into ~/.local/bin so 'watson' works from anywhere
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/watson" <<WRAPPER
+#!/usr/bin/env bash
+exec "$VENV_DIR/bin/watson" "\$@"
+WRAPPER
+    chmod +x "$HOME/.local/bin/watson"
+    success "Wrapper installed at ~/.local/bin/watson"
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        warn "Add ~/.local/bin to your PATH — paste this into your shell config:"
+        warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    fi
+}
+
+if _try_pip_install; then
+    success "watson-ctf installed."
+else
+    PIP_ERR=$("$PYTHON" -m pip install -e "$INSTALL_DIR" 2>&1 || true)
+    if echo "$PIP_ERR" | grep -qi "externally.managed"; then
+        _setup_venv
+    else
+        error "pip install failed. Output:"
+        echo "$PIP_ERR"
+        exit 1
+    fi
+fi
 
 # ------------------------------------------------------------------
 # 4. Interactive module selection (only if --modules not provided)
@@ -322,7 +366,7 @@ json.dump({'enabled_modules': enabled}, sys.stdout)
 echo ""
 info "Running ${BOLD}watson doctor${RESET} to check capabilities..."
 echo ""
-watson doctor 2>/dev/null || "$PYTHON" -m watson.cli doctor 2>/dev/null || warn "Could not run 'watson doctor' — check your PATH."
+"$HOME/.local/bin/watson" doctor 2>/dev/null || watson doctor 2>/dev/null || "$PYTHON" -m watson.cli doctor 2>/dev/null || warn "Could not run 'watson doctor' — check your PATH."
 
 # ------------------------------------------------------------------
 # 10. Closing quote
