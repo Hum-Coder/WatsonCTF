@@ -114,6 +114,33 @@ Modules: `core` `images` `audio` `documents` `containers` `disk` `network`
 
 `core` is always on and cannot be disabled. Default install enables `core`, `images`, and `containers`.
 
+### Configuration
+
+Watson stores its settings in `~/.config/watson/watson.cfg` — a plain text file you can edit directly.
+
+```bash
+watson config show                         # print all settings
+watson config set core.default_depth 5    # set examine depth permanently
+watson config set core.extract_dir ~/ctf/artifacts
+watson config set flags.extra_patterns lactf\{[^}]+\},uiuctf\{[^}]+\}
+watson config get core.default_depth       # read a single value
+watson config reset                        # restore defaults
+watson config path                         # print the config file location
+```
+
+Key settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `core.default_depth` | `3` | Default `--depth` |
+| `core.default_max_files` | `25` | Default `--max-files` |
+| `core.aggressive` | `false` | Always run in aggressive mode |
+| `core.extract_dir` | *(temp)* | Always keep extracted files here |
+| `core.verbose` | `false` | Always verbose |
+| `output.theme` | `true` | Watson quotes and case notes framing |
+| `output.color` | `true` | Rich colour output |
+| `flags.extra_patterns` | *(empty)* | Extra flag regexes, comma-separated |
+
 ---
 
 ## What Watson examines

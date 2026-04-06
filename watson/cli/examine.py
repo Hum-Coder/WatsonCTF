@@ -32,9 +32,9 @@ def _detect_mime(path: Path) -> str:
 
 def examine(
     target: Path = typer.Argument(..., help="File or directory to examine.", exists=True),
-    depth: int = typer.Option(3, "--depth", "-d", help="Maximum recursion depth."),
-    max_files: int = typer.Option(25, "--max-files", "-n", help="Maximum number of files to examine."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output."),
+    depth: Optional[int] = typer.Option(None, "--depth", "-d", help="Maximum recursion depth."),
+    max_files: Optional[int] = typer.Option(None, "--max-files", "-n", help="Maximum number of files to examine."),
+    verbose: Optional[bool] = typer.Option(None, "--verbose", "-v", help="Verbose output."),
     extract_dir: Optional[Path] = typer.Option(None, "--extract-dir", "-o", help="Directory to store extracted files."),
     aggressive: bool = typer.Option(False, "--aggressive", "-a", help="Aggressive mode: depth=6, max-files=100."),
     modules: Optional[str] = typer.Option(None, "--modules", "-m", help="Comma-separated modules to use, e.g. core,images,disk"),
@@ -49,7 +49,20 @@ def examine(
     from watson.core.triage import TriageQueue
     from watson.core.examiner import Examiner
 
-    _print_banner()
+    # Load config — CLI flags override, then config, then built-in defaults
+    cfg = _config.load()
+    if depth is None:
+        depth = _config.get_int(cfg, "core", "default_depth")
+    if max_files is None:
+        max_files = _config.get_int(cfg, "core", "default_max_files")
+    if verbose is None:
+        verbose = _config.get_bool(cfg, "core", "verbose")
+    if extract_dir is None:
+        cfg_extract = _config.get_str(cfg, "core", "extract_dir")
+        if cfg_extract:
+            extract_dir = Path(cfg_extract)
+    if not aggressive:
+        aggressive = _config.get_bool(cfg, "core", "aggressive")
 
     if aggressive:
         depth = 6

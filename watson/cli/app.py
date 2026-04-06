@@ -12,6 +12,7 @@ from watson.cli._shared import console
 from watson.cli.examine import examine
 from watson.cli.doctor import doctor
 from watson.cli.modules import modules_app
+from watson.cli.config_cmd import config_app
 
 app = typer.Typer(
     name="watson",
@@ -23,6 +24,7 @@ app = typer.Typer(
 app.command("examine")(examine)
 app.command("doctor")(doctor)
 app.add_typer(modules_app, name="modules")
+app.add_typer(config_app, name="config")
 
 
 @app.callback(invoke_without_command=True)
@@ -56,7 +58,7 @@ def _preprocess_argv() -> None:
     """
     from pathlib import Path
 
-    _KNOWN_SUBCOMMANDS = {"examine", "doctor", "modules", "--help", "-h", "--version", "-V"}
+    _KNOWN_SUBCOMMANDS = {"examine", "doctor", "modules", "config", "--help", "-h", "--version", "-V"}
     args = sys.argv[1:]
     if not args:
         return
