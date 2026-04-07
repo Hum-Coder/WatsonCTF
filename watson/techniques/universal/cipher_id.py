@@ -27,7 +27,8 @@ IC_RANDOM    = 0.0385
 IC_POLY_LOW  = 0.043   # below this = likely polyalphabetic or random
 IC_MONO_HIGH = 0.060   # above this = likely monoalphabetic
 
-MIN_TEXT_LEN = 20       # ignore blobs shorter than this
+MIN_TEXT_LEN = 80       # ignore blobs shorter than this — short strings cause too many false positives
+MIN_IC_LEN   = 60       # minimum letters for IC analysis to be meaningful
 MAX_DISPLAY  = 80       # characters of ciphertext shown in finding message
 
 
@@ -187,9 +188,14 @@ class CipherIdentify(BaseTechnique):
         if bacon:
             findings.append(bacon)
 
+        # Skip blobs that look like code, JSON, HTML — too many false positives
+        code_chars = sum(blob.count(c) for c in '{}[]();=:<>/\\')
+        if code_chars > len(blob) * 0.05:
+            return findings
+
         # --- Only-letters analysis (classical substitution territory) ---
         letters_only = re.sub(r'[^A-Za-z]', '', blob).upper()
-        if len(letters_only) >= MIN_TEXT_LEN:
+        if len(letters_only) >= MIN_IC_LEN:
             ic = self._index_of_coincidence(letters_only)
 
             if ic >= IC_MONO_HIGH:
@@ -234,8 +240,11 @@ class CipherIdentify(BaseTechnique):
             findings.append(xor)
 
         # --- High-entropy binary block (modern cipher) ---
-        entropy = self._byte_entropy(blob.encode("latin-1", errors="replace"))
-        if entropy > 7.5 and len(blob) % 16 == 0 and len(blob) >= 32:
+        # Only trigger on blobs that are mostly non-printable (i.e. actual binary data)
+        raw = blob.encode("latin-1", errors="replace")
+        printable_ratio = sum(0x20 <= b <= 0x7E for b in raw) / max(len(raw), 1)
+        entropy = self._byte_entropy(raw)
+        if entropy > 7.5 and len(blob) % 16 == 0 and len(blob) >= 64 and printable_ratio < 0.7:
             # Check for identical 16-byte blocks (ECB mode)
             raw = blob.encode("latin-1", errors="replace")
             blocks = [raw[i:i+16] for i in range(0, len(raw), 16)]

@@ -35,7 +35,8 @@ class BaseTechnique(ABC):
 
     def _flag_pattern(self, data: str) -> Optional[str]:
         """Search for CTF flag patterns in a string."""
-        patterns = [
+        # Tier 1: known competition prefixes — high confidence, always match
+        known = [
             r'picoCTF\{[^\}]{1,100}\}',
             r'HTB\{[^\}]{1,100}\}',
             r'htb\{[^\}]{1,100}\}',
@@ -43,17 +44,31 @@ class BaseTechnique(ABC):
             r'FLAG\{[^\}]{1,100}\}',
             r'CTF\{[^\}]{1,100}\}',
             r'ctf\{[^\}]{1,100}\}',
-            r'[A-Za-z0-9_]{2,10}\{[^\}\s]{3,80}\}',
+            r'DUCTF\{[^\}]{1,100}\}',
+            r'lactf\{[^\}]{1,100}\}',
+            r'uiuctf\{[^\}]{1,100}\}',
+            r'ictf\{[^\}]{1,100}\}',
         ]
-        for p in patterns:
-            m = re.search(p, data)
+        for p in known:
+            m = re.search(p, data, re.IGNORECASE)
             if m:
                 return m.group(0)
+
+        # Tier 2: generic WORD{content} — much stricter to avoid JSON/CSS/code
+        # Requirements: ALL-CAPS prefix, content has no spaces/colons/semicolons,
+        # content contains at least one digit or underscore (flags rarely pure words)
+        m = re.search(r'\b([A-Z]{2,10})\{([A-Za-z0-9_\-!@#$%^&*]{4,60})\}', data)
+        if m:
+            content = m.group(2)
+            # Must have at least one digit or underscore — pure words are not flags
+            if re.search(r'[\d_]', content):
+                return m.group(0)
+
         return None
 
     def _find_all_flags(self, data: str) -> List[str]:
         """Find all CTF flag patterns in a string."""
-        patterns = [
+        known = [
             r'picoCTF\{[^\}]{1,100}\}',
             r'HTB\{[^\}]{1,100}\}',
             r'htb\{[^\}]{1,100}\}',
@@ -61,14 +76,27 @@ class BaseTechnique(ABC):
             r'FLAG\{[^\}]{1,100}\}',
             r'CTF\{[^\}]{1,100}\}',
             r'ctf\{[^\}]{1,100}\}',
-            r'[A-Za-z0-9_]{2,10}\{[^\}\s]{3,80}\}',
+            r'DUCTF\{[^\}]{1,100}\}',
+            r'lactf\{[^\}]{1,100}\}',
+            r'uiuctf\{[^\}]{1,100}\}',
+            r'ictf\{[^\}]{1,100}\}',
         ]
         found = []
         seen = set()
-        for p in patterns:
-            for m in re.finditer(p, data):
+        for p in known:
+            for m in re.finditer(p, data, re.IGNORECASE):
                 val = m.group(0)
                 if val not in seen:
                     seen.add(val)
                     found.append(val)
+
+        # Generic tier — same strict rules as _flag_pattern
+        for m in re.finditer(r'\b([A-Z]{2,10})\{([A-Za-z0-9_\-!@#$%^&*]{4,60})\}', data):
+            content = m.group(2)
+            if re.search(r'[\d_]', content):
+                val = m.group(0)
+                if val not in seen:
+                    seen.add(val)
+                    found.append(val)
+
         return found

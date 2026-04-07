@@ -65,11 +65,15 @@ class Examiner:
                     if extracted.is_file():
                         self.triage.push(extracted, depth=depth + 1, parent_technique=finding.technique)
 
-                # Track flags
+                # Track flags — deduplicate across all techniques and files
                 if finding.flag:
-                    if finding.flag not in self._flags_found:
-                        self._flags_found.append(finding.flag)
-                        self.report.flag_found(finding.flag, finding.technique)
+                    normalised = finding.flag.strip()
+                    if normalised not in self._flags_found:
+                        self._flags_found.append(normalised)
+                        self.report.flag_found(normalised, finding.technique)
+                    else:
+                        # Suppress duplicate — clear flag so it doesn't show in conclusion
+                        finding.flag = None
 
         return self._all_findings
 
